@@ -8,7 +8,7 @@ import {
 } from '@/services/notebooklm';
 import { convertHtmlToMarkdown } from '@/services/pdf-generator';
 import { getHistory, clearHistory } from '@/services/history';
-import { fetchPodcast, sanitizeFilename, buildFilename } from '@/services/podcast';
+import { fetchPodcast, sanitizeFilename, buildFilename, buildEpisodeNoteText } from '@/services/podcast';
 import { fetchYouTube, fetchYouTubeMore, checkYouTubeSubtitles } from '@/services/youtube';
 import {
   fetchBilibiliVideo,
@@ -1037,6 +1037,21 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
     }
     return { added };
   }
+  // Import one podcast episode's shownotes as text — episode audio itself is
+  // never fetched or uploaded, only the description already carried on the
+  // episode object from FETCH_PODCAST.
+  if (type === 'IMPORT_PODCAST_EPISODE') {
+    const { podcast, episode } = message as any as { podcast: PodcastInfo; episode: PodcastEpisode };
+    await setOpState({ active: true, phase: 'importing', kind: 'import', current: 0, total: 1, title: episode.title, timestamp: Date.now() });
+    try {
+      const content = buildEpisodeNoteText(podcast, episode);
+      const success = await importText(content, `${podcast.name} - ${episode.title}`, senderTabId);
+      return { success };
+    } finally {
+      clearOpState();
+    }
+  }
+
   if (type === 'IMPORT_BILIBILI_SUBTITLES') {
     const { videos, ownerName, desc } = message as any;
     const settings = await getSettings();

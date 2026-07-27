@@ -5,7 +5,7 @@ import type { PodcastInfo, PodcastEpisode } from '@/services/podcast';
 import { t } from '@/lib/i18n';
 import { SourceInfoCard, SourceInfoCardSkeleton } from './SourceInfoCard';
 
-type State = 'idle' | 'loading' | 'loaded' | 'downloading' | 'done' | 'error';
+type State = 'idle' | 'loading' | 'loaded' | 'downloading' | 'importing' | 'done' | 'error';
 type Platform = 'unknown' | 'apple' | 'xiaoyuzhou';
 
 function detectPlatform(url: string): Platform {
@@ -28,16 +28,14 @@ function getPlatformConfig(platform: string) {
   return { name: platformNames[platform] || t('app.tabPodcast'), ...styles };
 }
 
-// No onImportHandlerChange here, unlike the other panels: episodes are audio and
-// there is no podcast -> NotebookLM path in the background (only DOWNLOAD_PODCAST).
-// App renders an explanatory hint in place of the shared import button instead.
 interface Props {
   initialUrl?: string;
   fetchTrigger?: number;
   onProgress?: (progress: ImportProgress | null) => void;
+  onImportHandlerChange?: (handler: (() => void) | null) => void;
 }
 
-export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
+export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHandlerChange }: Props) {
   const [url, setUrl] = useState(initialUrl || '');
   const [count, setCount] = useState<number | undefined>(undefined);
   const [state, setState] = useState<State>('idle');
@@ -50,10 +48,19 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
   const platform = useMemo(() => detectPlatform(url), [url]);
   const theme = getPlatformConfig(platform);
 
+  // True while a download or import is in flight. Read directly (not via
+  // React state) inside the auto-fetch effects below so a page/URL change
+  // mid-operation can't doFetch() a new episode list out from under it —
+  // the effects don't depend on `state`, so a state-based check there would
+  // close over a stale value instead of the current one.
+  const isLockedRef = useRef(false);
+  isLockedRef.current = state === 'downloading' || state === 'importing';
+
   // Auto-fetch when initialUrl changes (tab switch / page nav)
   const lastAutoUrl = useRef<string | null>(null);
   useEffect(() => {
     if (!initialUrl) return;
+    if (isLockedRef.current) return;
     if (lastAutoUrl.current === initialUrl) return;
     lastAutoUrl.current = initialUrl;
     setUrl(initialUrl);
@@ -81,7 +88,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
 
   // Re-fetch on fetchTrigger (header refresh button)
   useEffect(() => {
-    if (fetchTrigger && fetchTrigger > 0 && initialUrl) {
+    if (fetchTrigger && fetchTrigger > 0 && initialUrl && !isLockedRef.current) {
       lastAutoUrl.current = null;
       setUrl(initialUrl);
       setState('loading');
@@ -108,6 +115,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
   }, [fetchTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDownload = () => {
+    if (isLockedRef.current) return;
     const toDownload = episodes.filter((e) => selected.has(e.id));
     if (toDownload.length === 0) { setError(t('podcast.selectAtLeastOne')); setState('error'); return; }
 
@@ -171,6 +179,72 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
       if (state === 'downloading') setState('done');
     });
   };
+
+  // ── Import selected episodes' shownotes into NotebookLM (text, not audio) ──
+  // Drives the shared onProgress/ImportItem protocol the same way
+  // BilibiliImport/YouTubeImport/WebImport do, so the App-level progress bar
+  // and success/failure summary banner work here without any extra UI. Kept
+  // out of `state === 'error'` on failure deliberately: that branch renders
+  // a "no media content" SourceInfoCard for recognized platforms, which
+  // would misreport an import failure as "couldn't find audio/video".
+  const handleImport = async () => {
+    if (isLockedRef.current || !podcast) return;
+    const toImport = episodes.filter((e) => selected.has(e.id));
+    if (toImport.length === 0) return;
+
+    setState('importing');
+    const itemStatuses: ImportItem[] = toImport.map((ep) => ({ url: ep.title, status: 'pending' }));
+    onProgress?.({
+      total: toImport.length,
+      completed: 0,
+      current: { ...itemStatuses[0], status: 'importing' },
+      items: itemStatuses,
+    });
+
+    try {
+      for (let i = 0; i < toImport.length; i++) {
+        itemStatuses[i] = { ...itemStatuses[i], status: 'importing' };
+        onProgress?.({
+          total: toImport.length,
+          completed: i,
+          current: itemStatuses[i],
+          items: itemStatuses,
+        });
+
+        let success = false;
+        try {
+          const resp: any = await chrome.runtime.sendMessage({
+            type: 'IMPORT_PODCAST_EPISODE',
+            podcast,
+            episode: toImport[i],
+          });
+          success = !!resp?.success;
+        } catch {
+          success = false;
+        }
+        itemStatuses[i] = { ...itemStatuses[i], status: success ? 'success' : 'error' };
+
+        onProgress?.({
+          total: toImport.length,
+          completed: i + 1,
+          current: i + 1 < toImport.length ? { ...itemStatuses[i + 1], status: 'importing' } : undefined,
+          items: itemStatuses,
+        });
+      }
+
+      await new Promise((r) => setTimeout(r, 300));
+      onProgress?.(null);
+    } finally {
+      setState('loaded');
+    }
+  };
+
+  // Register import handler for the shared App-level "导入 NotebookLM" button
+  useEffect(() => {
+    onImportHandlerChange?.(selected.size > 0 ? handleImport : null);
+    return () => onImportHandlerChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onImportHandlerChange, handleImport, selected.size]);
 
   const toggleEpisode = (id: string) => {
     setSelected((prev) => {
@@ -248,7 +322,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
       {episodes.length > 0 && (
         <button
           onClick={handleDownload}
-          disabled={selected.size === 0 || state === 'downloading'}
+          disabled={selected.size === 0 || state === 'downloading' || state === 'importing'}
           className={`w-full py-2.5 ${theme.accent} text-white text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-btn hover:shadow-btn-hover transition-all duration-150 btn-press`}
         >
           {state === 'downloading' ? (
