@@ -124,8 +124,17 @@ async function apiFetch(url: string): Promise<unknown> {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export async function fetchBilibiliVideo(bvid: string): Promise<BilibiliResult> {
-  const data = await apiFetch(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`) as any;
+export async function fetchBilibiliVideo(id: string): Promise<BilibiliResult> {
+  // parseBilibiliUrl accepts both BV... and legacy av\d+ ids, but the view API
+  // takes them via different query params (bvid= vs aid=) and every downstream
+  // call (subtitle fetch, page URLs) only accepts a real BVID. Query with
+  // whichever form we have, then normalize to the canonical bvid the response
+  // itself reports — an av-id was previously threaded through as `bvid` for
+  // the rest of the pipeline, which bilibili's other endpoints reject outright.
+  const aidMatch = /^av(\d+)$/i.exec(id);
+  const query = aidMatch ? `aid=${aidMatch[1]}` : `bvid=${encodeURIComponent(id)}`;
+  const data = await apiFetch(`https://api.bilibili.com/x/web-interface/view?${query}`) as any;
+  const bvid: string = data?.bvid || id;
 
   const mainTitle: string = data?.title || bvid;
   const owner: string = data?.owner?.name || '';
