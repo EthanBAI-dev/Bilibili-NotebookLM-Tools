@@ -47,6 +47,7 @@ export default defineConfig({
       'https://i.hdslb.com/*',
       'https://www.googleapis.com/*',
       'https://accounts.google.com/*',
+      'https://itunes.apple.com/*',
     ],
     // oauth2 is removed for now; will be re-added when Google Drive upload is ready
     side_panel: {

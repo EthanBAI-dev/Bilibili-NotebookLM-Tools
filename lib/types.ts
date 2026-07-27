@@ -142,3 +142,10 @@ export interface ClaudeConversation {
   pairs?: QAPair[];
   extractedAt: number;
 }
+
+// RSS feed item
+export interface RssFeedItem {
+  url: string;
+  title: string;
+  pubDate?: string;
+}

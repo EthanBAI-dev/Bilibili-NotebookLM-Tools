@@ -6,7 +6,7 @@ import { addSourceUrl, addSourceText, fetchNotebooksCached } from './notebook-ap
 
 const BATCH_DELAY_MS = 1200;
 
-async function getNotebookId(): Promise<string> {
+export async function getNotebookId(): Promise<string> {
   const selected = await getSelectedNotebook();
   if (selected) return selected.id;
 
