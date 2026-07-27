@@ -16,10 +16,12 @@ import {
   sanitizeBilibiliFilename,
   parseBilibiliUrl,
   mergeBilibiliSubtitles,
+  mergeSubtitlesFormatted,
   fetchBilibiliUserVideos,
   fetchBilibiliFavoriteList,
   convertSubtitleOutput,
 } from '@/services/bilibili';
+import type { SubtitleFetchResult } from '@/services/bilibili';
 import { setOpState, clearOpState, type OpState } from '@/services/op-state';
 import { uploadToDrive } from '@/services/google-drive';
 import { fetchAndCacheAccounts, logSlotDebug } from '@/services/account-slots';
@@ -295,7 +297,7 @@ export default defineBackground(() => {
 
         try {
           if (isMerged) {
-            const results: { video: any; markdown: string | null }[] = [];
+            const results: SubtitleFetchResult[] = [];
             for (let i = 0; i < videos.length; i++) {
               const video = videos[i];
               sendProgress({ phase: 'downloading', current: i + 1, total: videos.length, title: video.part || video.title, bvid: video.bvid });
@@ -305,8 +307,7 @@ export default defineBackground(() => {
                 await new Promise(r => setTimeout(r, 1500));
               }
             }
-            let mergedMd = mergeBilibiliSubtitles(results, source);
-            const fmt = convertSubtitleOutput(outputFormat || 'md', mergedMd, undefined, stripTimestamps);
+            const fmt = mergeSubtitlesFormatted(results, source, (outputFormat || 'md') as 'md' | 'txt' | 'json' | 'srt', stripTimestamps);
             const mergedLabel = await runtimeT('runtime.bilibiliMergedContent');
             const mergedFilename = `${sanitizeBilibiliFilename(source.title)}_${sanitizeBilibiliFilename(mergedLabel)}${fmt.ext}`;
             const encoded = btoa(unescape(encodeURIComponent(fmt.content)));

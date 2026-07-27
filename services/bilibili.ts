@@ -604,6 +604,77 @@ export function mergeBilibiliSubtitles(
   return lines.join('\n');
 }
 
+/**
+ * Merge multiple videos' subtitles into a single file honoring the requested
+ * output format. `mergeBilibiliSubtitles` above only ever produces Markdown —
+ * feeding that into `convertSubtitleOutput` with no rawBody meant a merged
+ * '.json' export was just `{ text: "<the markdown>" }` and a merged '.srt'
+ * export was the markdown itself wearing a '.srt' extension. Per-video
+ * rawBody (kept on each SubtitleFetchResult) makes a real merge possible.
+ */
+export function mergeSubtitlesFormatted(
+  results: SubtitleFetchResult[],
+  source: BilibiliSourceInfo,
+  format: SubtitleFormat,
+  stripTimestamps: boolean = true,
+): { content: string; ext: string; mime: string } {
+  if (format === 'md' || format === 'txt') {
+    const md = mergeBilibiliSubtitles(results, source);
+    return convertSubtitleOutput(format, md, undefined, stripTimestamps);
+  }
+
+  const validResults = results.filter((r) => r.rawBody && r.rawBody.length > 0);
+  const chapterTitle = (v: BilibiliVideoItem) => (v.part ? `P${v.page} ${v.part}` : `P${v.page} ${v.title}`);
+
+  if (format === 'json') {
+    const chapters = validResults.map((r) => ({
+      title: chapterTitle(r.video),
+      bvid: r.video.bvid,
+      entries: r.rawBody!.map((b, i) => ({
+        index: i + 1,
+        from: b.from,
+        to: b.to,
+        content: b.content.replace(/<[^>]+>/g, '').trim(),
+      })),
+    }));
+    return {
+      content: JSON.stringify({ title: source.title, owner: source.owner, chapters }, null, 2),
+      ext: '.json',
+      mime: 'application/json',
+    };
+  }
+
+  // srt: one continuous timeline. Each chapter's cues are shifted past the
+  // previous chapter's last cue (plus a gap) so the whole file stays
+  // monotonically increasing, and a short marker cue announces each chapter —
+  // SRT has no native heading construct, so this is the only way a player or
+  // reader can tell where one video ends and the next begins.
+  const GAP_SECONDS = 2;
+  let index = 1;
+  let offset = 0;
+  const blocks: string[] = [];
+
+  for (const r of validResults) {
+    const title = chapterTitle(r.video);
+    blocks.push(`${index}\n${formatTimestamp(offset)} --> ${formatTimestamp(offset + 1.5)}\n[${title}]\n`);
+    index++;
+
+    let lastTo = 0;
+    for (const b of r.rawBody!) {
+      const text = b.content.replace(/<[^>]+>/g, '').trim();
+      if (!text) continue;
+      const from = offset + 1.5 + b.from;
+      const to = offset + 1.5 + b.to;
+      blocks.push(`${index}\n${formatTimestamp(from)} --> ${formatTimestamp(to)}\n${text}\n`);
+      index++;
+      lastTo = Math.max(lastTo, b.to);
+    }
+    offset += 1.5 + lastTo + GAP_SECONDS;
+  }
+
+  return { content: blocks.join('\n'), ext: '.srt', mime: 'text/plain' };
+}
+
 // ── Main Subtitle Fetch (FlowToLM approach) ──
 
 export interface SubtitleFetchResult {
