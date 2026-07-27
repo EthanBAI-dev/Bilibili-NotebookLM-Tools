@@ -180,6 +180,8 @@ const zh = {
   'bilibili.downloadedSummary': '已下载 {downloaded} 个字幕文件',
   'bilibili.downloadedSummaryWithSkipped': '已下载 {downloaded} 个字幕文件，{skipped} 个无字幕',
   'bilibili.mergedDownloadDone': '已合并下载 {count} 个视频内容',
+  'bilibili.importedSummary': '已导入 {count} 个视频到 NotebookLM',
+  'bilibili.importedSummaryWithSkipped': '已导入 {imported} 个视频，{skipped} 个失败',
 
   // ── App Controls ──
   'app.readCurrentPage': '读取当前网页',
@@ -600,6 +602,8 @@ const en: Record<keyof typeof zh, string> = {
   'bilibili.downloadedSummary': 'Downloaded {downloaded} subtitle files',
   'bilibili.downloadedSummaryWithSkipped': 'Downloaded {downloaded} subtitle files, {skipped} without subtitles',
   'bilibili.mergedDownloadDone': 'Merged download complete for {count} videos',
+  'bilibili.importedSummary': 'Imported {count} videos to NotebookLM',
+  'bilibili.importedSummaryWithSkipped': 'Imported {imported} videos, {skipped} failed',
 
   // ── App Controls ──
   'app.readCurrentPage': 'Read Current Page',

@@ -515,3 +515,30 @@ export function sanitizeFilename(name: string): string {
 export function buildFilename(index: number, title: string, ext: string): string {
   return `${String(index).padStart(3, '0')} - ${sanitizeFilename(title)}${ext}`;
 }
+
+// ── NotebookLM text import ──
+
+/**
+ * Build a text note for one episode, for importing into NotebookLM via
+ * addSourceText. Episode audio itself is never fetched or uploaded — only
+ * the shownotes, which every parser here already returns as plain text
+ * (RSS <description> is HTML-stripped; iTunes API descriptions come back
+ * as plain text already).
+ */
+export function buildEpisodeNoteText(podcast: PodcastInfo, episode: PodcastEpisode): string {
+  const lines: string[] = [
+    `# 播客节目：${podcast.name} - ${episode.title}`,
+    '',
+    `- **发布方：** ${podcast.artist || '未知'}`,
+    `- **发布日期：** ${episode.releaseDate || '未知'}`,
+    `- **时长：** ${episode.durationMinutes > 0 ? `${episode.durationMinutes} 分钟` : '未知'}`,
+    `- **音频链接：** ${episode.audioUrl}`,
+    '',
+    '---',
+    '',
+    '## 节目简介',
+    '',
+    episode.description?.trim() || '暂无简介',
+  ];
+  return lines.join('\n');
+}

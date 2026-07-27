@@ -8,7 +8,7 @@ import {
 } from '@/services/notebooklm';
 import { convertHtmlToMarkdown } from '@/services/pdf-generator';
 import { getHistory, clearHistory } from '@/services/history';
-import { fetchPodcast, sanitizeFilename, buildFilename } from '@/services/podcast';
+import { fetchPodcast, sanitizeFilename, buildFilename, buildEpisodeNoteText } from '@/services/podcast';
 import { fetchYouTube, fetchYouTubeMore, checkYouTubeSubtitles } from '@/services/youtube';
 import {
   fetchBilibiliVideo,
@@ -16,10 +16,12 @@ import {
   sanitizeBilibiliFilename,
   parseBilibiliUrl,
   mergeBilibiliSubtitles,
+  mergeSubtitlesFormatted,
   fetchBilibiliUserVideos,
   fetchBilibiliFavoriteList,
   convertSubtitleOutput,
 } from '@/services/bilibili';
+import type { SubtitleFetchResult } from '@/services/bilibili';
 import { setOpState, clearOpState, type OpState } from '@/services/op-state';
 import { uploadToDrive } from '@/services/google-drive';
 import { fetchAndCacheAccounts, logSlotDebug } from '@/services/account-slots';
@@ -295,7 +297,7 @@ export default defineBackground(() => {
 
         try {
           if (isMerged) {
-            const results: { video: any; markdown: string | null }[] = [];
+            const results: SubtitleFetchResult[] = [];
             for (let i = 0; i < videos.length; i++) {
               const video = videos[i];
               sendProgress({ phase: 'downloading', current: i + 1, total: videos.length, title: video.part || video.title, bvid: video.bvid });
@@ -305,8 +307,7 @@ export default defineBackground(() => {
                 await new Promise(r => setTimeout(r, 1500));
               }
             }
-            let mergedMd = mergeBilibiliSubtitles(results, source);
-            const fmt = convertSubtitleOutput(outputFormat || 'md', mergedMd, undefined, stripTimestamps);
+            const fmt = mergeSubtitlesFormatted(results, source, (outputFormat || 'md') as 'md' | 'txt' | 'json' | 'srt', stripTimestamps);
             const mergedLabel = await runtimeT('runtime.bilibiliMergedContent');
             const mergedFilename = `${sanitizeBilibiliFilename(source.title)}_${sanitizeBilibiliFilename(mergedLabel)}${fmt.ext}`;
             const encoded = btoa(unescape(encodeURIComponent(fmt.content)));
@@ -922,10 +923,13 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
           return;
         }
 
-        // Broadcast to sidepanel
+        // Broadcast to sidepanel. tabId is required: every YouTube tab reports
+        // its SPA navigations here, including background tabs autoplaying the
+        // next video, and the panel must ignore anything but its active tab.
         broadcastToSidepanel({
           type: 'YT_FETCH_RESULT',
           url: currentUrl,
+          tabId,
           result,
         });
       } catch (err) {
@@ -933,6 +937,7 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
         broadcastToSidepanel({
           type: 'YT_FETCH_RESULT',
           url: currentUrl,
+          tabId,
           result: null,
           error: err instanceof Error ? err.message : 'Fetch failed',
         });
@@ -1032,6 +1037,21 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
     }
     return { added };
   }
+  // Import one podcast episode's shownotes as text — episode audio itself is
+  // never fetched or uploaded, only the description already carried on the
+  // episode object from FETCH_PODCAST.
+  if (type === 'IMPORT_PODCAST_EPISODE') {
+    const { podcast, episode } = message as any as { podcast: PodcastInfo; episode: PodcastEpisode };
+    await setOpState({ active: true, phase: 'importing', kind: 'import', current: 0, total: 1, title: episode.title, timestamp: Date.now() });
+    try {
+      const content = buildEpisodeNoteText(podcast, episode);
+      const success = await importText(content, `${podcast.name} - ${episode.title}`, senderTabId);
+      return { success };
+    } finally {
+      clearOpState();
+    }
+  }
+
   if (type === 'IMPORT_BILIBILI_SUBTITLES') {
     const { videos, ownerName, desc } = message as any;
     const settings = await getSettings();

@@ -34,10 +34,12 @@ interface Props {
  */
 function detectFetchMode(url: string): FetchMode {
   if (isBilibiliSpaceUrl(url)) return 'space';
-  if (/bilibili\.com\/list\/(watchlater|fav)/.test(url)) return 'favorite';
-  if (/bilibili\.com\/list\/ml/.test(url)) return 'favorite';
+  // Delegate to isBilibiliFavUrl (services/bilibili.ts) instead of re-deriving
+  // the pattern here — the duplicated regex missed /medialist/play/ml{id},
+  // which isBilibiliFavUrl already recognizes, so those links fell through to
+  // 'single' and got rejected as unparseable.
+  if (isBilibiliFavUrl(url)) return 'favorite';
   if (/bilibili\.com\/video\/.*\?p=\d+/.test(url)) return 'season';
-  if (/bilibili\.com\/video\/BV/.test(url)) return 'single';
   return 'single';
 }
 
@@ -261,36 +263,66 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
   }, [fetchTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Subtitle detection ──
+  // Probes the video the current page URL points at, not blindly videos[0] — in a
+  // 合集/收藏夹 those are different videos. Uses its own generation counter so a
+  // probe can never invalidate an in-flight doFetch response, and vice versa.
+  //
+  // A failed probe resolves to `undefined` (unknown), never 'unavailable':
+  // 'unavailable' hides the entire video list and disables import, so it must
+  // only be set when the API positively reports zero subtitle tracks.
+  const subtitleGenRef = useRef(0);
   useEffect(() => {
     if (state !== 'loaded') {
       setSubtitleStatus(undefined);
       return;
     }
 
-    const firstVideo = videos[0];
-    if (!firstVideo) return;
+    const parsed = parseBilibiliUrl(url);
+    const target = (parsed && videos.find((v) => v.bvid === parsed.bvid)) || videos[0];
+    if (!target) return;
 
-    const gen = ++fetchGenRef.current;
+    const gen = ++subtitleGenRef.current;
     setSubtitleStatus('checking');
-    const bvid = firstVideo.bvid;
-    const cid = firstVideo.cid || 0;
 
     const controller = new AbortController();
+    const opts = { credentials: 'include' as const, signal: controller.signal };
 
-    fetch(`https://api.bilibili.com/x/player/v2?bvid=${bvid}&cid=${cid}`, { credentials: 'include', signal: controller.signal })
-      .then(r => r.json())
-      .then(data => {
-        if (!mountedRef.current || fetchGenRef.current !== gen) return; // stale
-        const subtitles = data?.data?.subtitle?.subtitles;
-        setSubtitleStatus(subtitles && subtitles.length > 0 ? 'available' : 'unavailable');
+    const probe = async (): Promise<boolean> => {
+      let cid = target.cid;
+      // UP主主页 / 收藏夹 lists carry cid: 0 — it has to be resolved first, or the
+      // player API rejects the request and every video looks subtitle-less.
+      if (!cid) {
+        const viewRes = await fetch(
+          `https://api.bilibili.com/x/web-interface/view?bvid=${target.bvid}`,
+          opts,
+        );
+        const viewData = await viewRes.json();
+        if (viewData?.code !== 0) throw new Error(`view API ${viewData?.code}`);
+        cid = viewData?.data?.cid;
+      }
+      if (!cid) throw new Error('no cid');
+
+      const res = await fetch(
+        `https://api.bilibili.com/x/player/v2?bvid=${target.bvid}&cid=${cid}`,
+        opts,
+      );
+      const data = await res.json();
+      if (data?.code !== 0) throw new Error(`player API ${data?.code}`);
+      return (data?.data?.subtitle?.subtitles?.length ?? 0) > 0;
+    };
+
+    probe()
+      .then((available) => {
+        if (!mountedRef.current || subtitleGenRef.current !== gen) return; // stale
+        setSubtitleStatus(available ? 'available' : 'unavailable');
       })
       .catch(() => {
-        if (!mountedRef.current || fetchGenRef.current !== gen) return; // stale
-        setSubtitleStatus('unavailable');
+        if (!mountedRef.current || subtitleGenRef.current !== gen) return; // stale
+        setSubtitleStatus(undefined); // unknown — don't lock the user out
       });
 
     return () => controller.abort();
-  }, [state, videos]);
+  }, [state, videos, url]);
 
   const getSelectedVideos = () => videos.filter(v => selected.has(videoKey(v)));
 
@@ -302,6 +334,7 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
     }
     clearOpState();
     setDlProgress(null);
+    onProgress(null); // handleImport drives the App-level progress bar; clear it too
     setState('idle');
     setError(t('bilibili.cancelled'));
   };
@@ -366,12 +399,24 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
   };
 
   // ── Import selected videos' subtitles into NotebookLM ──
+  // Locks the UI for the duration (state 'importing' is part of `isLocked`),
+  // so the initialUrl/fetchTrigger auto-detect effects don't doFetch() a new
+  // page's videos out from under an import in progress. Cancellation is
+  // best-effort: it stops the loop from issuing further per-video import
+  // calls, but a request already in flight still completes on the background
+  // side — the same semantics handleDownload's cancel has for its port.
   const handleImport = async () => {
+    if (isLockedRef.current) return; // already running — ignore a duplicate trigger
     const toProcess = getSelectedVideos();
     if (toProcess.length === 0) { setError(t('bilibili.selectAtLeastOne')); setState('error'); return; }
 
+    setState('importing');
     setError('');
     setDoneMsg('');
+    setDlProgress({ current: 0, total: toProcess.length });
+
+    let cancelled = false;
+    abortRef.current = { cancel: () => { cancelled = true; } };
 
     const itemStatuses = toProcess.map<ImportItem>((v) => ({ url: v.part || v.title, status: 'pending' }));
 
@@ -384,7 +429,10 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
 
     try {
       for (let i = 0; i < toProcess.length; i++) {
+        if (cancelled) return; // handleCancel already reset state/error/progress
+
         itemStatuses[i] = { ...itemStatuses[i], status: 'importing' };
+        setDlProgress({ current: i + 1, total: toProcess.length, title: itemStatuses[i].url });
         onProgress({
           total: toProcess.length,
           completed: i,
@@ -398,6 +446,8 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
           ownerName: source?.owner || '',
           desc: source?.desc || '',
         });
+
+        if (cancelled) return;
 
         itemStatuses[i] = {
           ...itemStatuses[i],
@@ -414,8 +464,21 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
 
       await new Promise((r) => setTimeout(r, 300));
       onProgress(null);
+      setDlProgress(null);
+      abortRef.current = { cancel: () => {} };
+
+      const failed = itemStatuses.filter((s) => s.status === 'error').length;
+      const success = itemStatuses.length - failed;
+      setDoneMsg(failed > 0
+        ? t('bilibili.importedSummaryWithSkipped', { imported: success, skipped: failed })
+        : t('bilibili.importedSummary', { count: success })
+      );
+      setState('done');
     } catch (err) {
       onProgress?.(null);
+      setDlProgress(null);
+      abortRef.current = { cancel: () => {} };
+      setState('error');
       setError(err instanceof Error ? err.message : t('importFailed'));
     }
   };
@@ -638,7 +701,9 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
             <Download className="w-6 h-6 text-[#00a1d6]" />
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-800">{t('bilibili.exporting')}</p>
+            <p className="text-sm font-medium text-gray-800">
+              {state === 'importing' ? t('bilibili.importing') : t('bilibili.exporting')}
+            </p>
               {dlProgress && (
                 <p className="text-xs text-gray-400 mt-1">
                   {dlProgress.title || `${dlProgress.current}/${dlProgress.total}`}
