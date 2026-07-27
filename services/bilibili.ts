@@ -330,7 +330,10 @@ export async function fetchBilibiliFavoriteList(url: string): Promise<BilibiliFa
       ) as any;
 
       if (!infoTitle) {
-        infoTitle = data?.info?.title || type === 'ml' ? '媒体列表' : '收藏夹';
+        // Parenthesised on purpose: `||` binds tighter than `?:`, so without it
+        // the real folder name is never used — a truthy title selected the
+        // '媒体列表' literal instead.
+        infoTitle = data?.info?.title || (type === 'ml' ? '媒体列表' : '收藏夹');
         infoOwner = data?.info?.upper?.name || '';
       }
 
