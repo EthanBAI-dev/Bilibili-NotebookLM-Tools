@@ -72,90 +72,93 @@ export default function App() {
     setImportFinished(null);
   }, []);
 
-  // ── Tab/URL detection with debounce ──
-  // During SPA navigation, Chrome fires onHistoryStateUpdated + onTabUpdated in
-  // rapid succession. The debounce ensures only the final URL is processed,
-  // preventing both stale state from reappearing and duplicate fetches.
+  // ── Tab/URL detection ──
+  // Browser events are treated as *triggers only*: the URL is always re-read from
+  // the active tab of this side panel's own window. Background tabs (Bilibili 连播,
+  // YouTube autoplay), other browser windows and sub-frames all fire the very same
+  // events, so trusting the URL an event carries let any of them hijack the panel.
+  // The debounce collapses the burst Chrome fires per SPA navigation.
   const lastDetectedUrlRef = useRef<string>('');
   const detectTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const detectUrl = useCallback(async (url: string, tabId?: number) => {
-    if (!url) return;
-    if (detectTimerRef.current) clearTimeout(detectTimerRef.current);
 
-    detectTimerRef.current = setTimeout(async () => {
-      if (url === lastDetectedUrlRef.current) return;
-      lastDetectedUrlRef.current = url;
+  const applyDetectedUrl = useCallback((url: string, tabId?: number) => {
+    // Clear any stale prefetched result when URL changes
+    if (url !== prefetchedYouTubeUrlRef.current) {
+      prefetchedYouTubeUrlRef.current = '';
+      setPrefetchedYouTubeResult(null);
+    }
 
-      // Clear any stale prefetched result when URL changes
-      if (url !== prefetchedYouTubeUrlRef.current) {
-        prefetchedYouTubeUrlRef.current = '';
-        setPrefetchedYouTubeResult(null);
-      }
-
-      const op = await getOpState();
-      if (op?.active) return;
-      if (/podcasts\.apple\.com\//.test(url) || /xiaoyuzhoufm\.com\/(episode|podcast)\//.test(url)) {
-        setActiveTab('podcast');
-        setInitialPodcastUrl(url);
-      } else if (/(?:youtube\.com|youtu\.be)\//.test(url)) {
-        setActiveTab('youtube');
-        setInitialYouTubeUrl(url);
-        // Clear stale prefetched result so YouTubeImport does a fresh manual fetch
-        prefetchedYouTubeUrlRef.current = '';
-        setPrefetchedYouTubeResult(null);
-      } else if (/bilibili\.com\//.test(url)) {
-        setActiveTab('bilibili');
-        setInitialBilibiliUrl(url);
-      } else if (/claude\.ai\/|chatgpt\.com\/|chat\.openai\.com\/|gemini\.google\.com\//.test(url)) {
-        setActiveTab('claude');
-      } else if (/^https?:\/\//.test(url)) {
-        setActiveTab('web');
-      } else {
-        setActiveTab('web');
-      }
-      if (/notebooklm\.google\.com/.test(url) && tabId) {
-        setNotebookLMTabId(tabId);
-      }
-    }, 200);
+    if (/podcasts\.apple\.com\//.test(url) || /xiaoyuzhoufm\.com\/(episode|podcast)\//.test(url)) {
+      setActiveTab('podcast');
+      setInitialPodcastUrl(url);
+    } else if (/(?:youtube\.com|youtu\.be)\//.test(url)) {
+      setActiveTab('youtube');
+      setInitialYouTubeUrl(url);
+      // Clear stale prefetched result so YouTubeImport does a fresh manual fetch
+      prefetchedYouTubeUrlRef.current = '';
+      setPrefetchedYouTubeResult(null);
+    } else if (/bilibili\.com\//.test(url)) {
+      setActiveTab('bilibili');
+      setInitialBilibiliUrl(url);
+    } else if (/claude\.ai\/|chatgpt\.com\/|chat\.openai\.com\/|gemini\.google\.com\//.test(url)) {
+      setActiveTab('claude');
+    } else {
+      setActiveTab('web');
+    }
+    if (/notebooklm\.google\.com/.test(url) && tabId) {
+      setNotebookLMTabId(tabId);
+    }
   }, []);
+
+  const scheduleDetect: (delayMs?: number, force?: boolean) => void = useCallback(
+    (delayMs = 200, force = false) => {
+      if (detectTimerRef.current) clearTimeout(detectTimerRef.current);
+
+      detectTimerRef.current = setTimeout(() => {
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+          const url = tabs[0]?.url || '';
+          if (!url) return;
+          if (!force && url === lastDetectedUrlRef.current) return;
+
+          // Don't reshuffle the panel mid-operation — but deliberately do NOT
+          // record the URL as handled either. Recording it before this bail-out
+          // strands the panel on the previous page for good (even the refresh
+          // button can't recover it). Re-check until the operation clears.
+          const op = await getOpState();
+          if (op?.active) {
+            scheduleDetect(1500, force);
+            return;
+          }
+
+          lastDetectedUrlRef.current = url;
+          applyDetectedUrl(url, tabs[0]?.id);
+        });
+      }, delayMs);
+    },
+    [applyDetectedUrl],
+  );
 
   const handleReadCurrentPage = useCallback(() => {
     setFetchTrigger((prev) => prev + 1);
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const url = tabs[0]?.url || '';
-      const tabId = tabs[0]?.id;
-      detectUrl(url, tabId);
-    });
-  }, [detectUrl]);
+    scheduleDetect(0, true); // force — lets the user re-read the same URL on demand
+  }, [scheduleDetect]);
 
   useEffect(() => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const url = tabs[0]?.url || '';
-      const tabId = tabs[0]?.id;
-      detectUrl(url, tabId);
-    });
+    scheduleDetect(0);
 
     const handleTabUpdated = (_tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
-      if (changeInfo.url && tab.active) {
-        detectUrl(changeInfo.url, tab.id);
-      }
+      if (changeInfo.url && tab.active) scheduleDetect();
     };
 
-    const handleTabActivated = (activeInfo: chrome.tabs.TabActiveInfo) => {
-      chrome.tabs.get(activeInfo.tabId, (tab) => {
-        if (tab.url) {
-          detectUrl(tab.url, tab.id);
-        }
-      });
-    };
+    const handleTabActivated = () => scheduleDetect();
 
-    // SPA route changes: History API pushState/replaceState + hash changes
+    // SPA route changes: History API pushState/replaceState + hash changes.
+    // frameId 0 only — a sub-frame's pushState is not the page the user is on.
     const handleHistoryStateUpdated = (
       details: chrome.webNavigation.WebNavigationTransitionCallbackDetails,
     ) => {
-      if (details.tabId) {
-        detectUrl(details.url, details.tabId);
-      }
+      if (details.frameId !== 0) return;
+      scheduleDetect();
     };
 
     chrome.tabs.onUpdated.addListener(handleTabUpdated);
@@ -196,7 +199,7 @@ export default function App() {
       chrome.webNavigation.onHistoryStateUpdated.removeListener(handleHistoryStateUpdated);
       chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
     };
-  }, [detectUrl]);
+  }, [scheduleDetect]);
 
   if (showHistory) {
     return <HistoryPanel onClose={() => setShowHistory(false)} />;
