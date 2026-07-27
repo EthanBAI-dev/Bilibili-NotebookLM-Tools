@@ -39,3 +39,5 @@ releases/*.zip
 # Reference projects (local only)
 .add-to-nlm-ref/
 .notebooklm-py-reference/
+# 818MB, mostly bundled Whisper ONNX weights — never commit
+subbatch-local-v2.0.0/
