@@ -261,36 +261,66 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
   }, [fetchTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Subtitle detection ──
+  // Probes the video the current page URL points at, not blindly videos[0] — in a
+  // 合集/收藏夹 those are different videos. Uses its own generation counter so a
+  // probe can never invalidate an in-flight doFetch response, and vice versa.
+  //
+  // A failed probe resolves to `undefined` (unknown), never 'unavailable':
+  // 'unavailable' hides the entire video list and disables import, so it must
+  // only be set when the API positively reports zero subtitle tracks.
+  const subtitleGenRef = useRef(0);
   useEffect(() => {
     if (state !== 'loaded') {
       setSubtitleStatus(undefined);
       return;
     }
 
-    const firstVideo = videos[0];
-    if (!firstVideo) return;
+    const parsed = parseBilibiliUrl(url);
+    const target = (parsed && videos.find((v) => v.bvid === parsed.bvid)) || videos[0];
+    if (!target) return;
 
-    const gen = ++fetchGenRef.current;
+    const gen = ++subtitleGenRef.current;
     setSubtitleStatus('checking');
-    const bvid = firstVideo.bvid;
-    const cid = firstVideo.cid || 0;
 
     const controller = new AbortController();
+    const opts = { credentials: 'include' as const, signal: controller.signal };
 
-    fetch(`https://api.bilibili.com/x/player/v2?bvid=${bvid}&cid=${cid}`, { credentials: 'include', signal: controller.signal })
-      .then(r => r.json())
-      .then(data => {
-        if (!mountedRef.current || fetchGenRef.current !== gen) return; // stale
-        const subtitles = data?.data?.subtitle?.subtitles;
-        setSubtitleStatus(subtitles && subtitles.length > 0 ? 'available' : 'unavailable');
+    const probe = async (): Promise<boolean> => {
+      let cid = target.cid;
+      // UP主主页 / 收藏夹 lists carry cid: 0 — it has to be resolved first, or the
+      // player API rejects the request and every video looks subtitle-less.
+      if (!cid) {
+        const viewRes = await fetch(
+          `https://api.bilibili.com/x/web-interface/view?bvid=${target.bvid}`,
+          opts,
+        );
+        const viewData = await viewRes.json();
+        if (viewData?.code !== 0) throw new Error(`view API ${viewData?.code}`);
+        cid = viewData?.data?.cid;
+      }
+      if (!cid) throw new Error('no cid');
+
+      const res = await fetch(
+        `https://api.bilibili.com/x/player/v2?bvid=${target.bvid}&cid=${cid}`,
+        opts,
+      );
+      const data = await res.json();
+      if (data?.code !== 0) throw new Error(`player API ${data?.code}`);
+      return (data?.data?.subtitle?.subtitles?.length ?? 0) > 0;
+    };
+
+    probe()
+      .then((available) => {
+        if (!mountedRef.current || subtitleGenRef.current !== gen) return; // stale
+        setSubtitleStatus(available ? 'available' : 'unavailable');
       })
       .catch(() => {
-        if (!mountedRef.current || fetchGenRef.current !== gen) return; // stale
-        setSubtitleStatus('unavailable');
+        if (!mountedRef.current || subtitleGenRef.current !== gen) return; // stale
+        setSubtitleStatus(undefined); // unknown — don't lock the user out
       });
 
     return () => controller.abort();
-  }, [state, videos]);
+  }, [state, videos, url]);
 
   const getSelectedVideos = () => videos.filter(v => selected.has(videoKey(v)));
 
