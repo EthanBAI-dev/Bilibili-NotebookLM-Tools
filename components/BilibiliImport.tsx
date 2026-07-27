@@ -334,6 +334,7 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
     }
     clearOpState();
     setDlProgress(null);
+    onProgress(null); // handleImport drives the App-level progress bar; clear it too
     setState('idle');
     setError(t('bilibili.cancelled'));
   };
@@ -398,12 +399,24 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
   };
 
   // ── Import selected videos' subtitles into NotebookLM ──
+  // Locks the UI for the duration (state 'importing' is part of `isLocked`),
+  // so the initialUrl/fetchTrigger auto-detect effects don't doFetch() a new
+  // page's videos out from under an import in progress. Cancellation is
+  // best-effort: it stops the loop from issuing further per-video import
+  // calls, but a request already in flight still completes on the background
+  // side — the same semantics handleDownload's cancel has for its port.
   const handleImport = async () => {
+    if (isLockedRef.current) return; // already running — ignore a duplicate trigger
     const toProcess = getSelectedVideos();
     if (toProcess.length === 0) { setError(t('bilibili.selectAtLeastOne')); setState('error'); return; }
 
+    setState('importing');
     setError('');
     setDoneMsg('');
+    setDlProgress({ current: 0, total: toProcess.length });
+
+    let cancelled = false;
+    abortRef.current = { cancel: () => { cancelled = true; } };
 
     const itemStatuses = toProcess.map<ImportItem>((v) => ({ url: v.part || v.title, status: 'pending' }));
 
@@ -416,7 +429,10 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
 
     try {
       for (let i = 0; i < toProcess.length; i++) {
+        if (cancelled) return; // handleCancel already reset state/error/progress
+
         itemStatuses[i] = { ...itemStatuses[i], status: 'importing' };
+        setDlProgress({ current: i + 1, total: toProcess.length, title: itemStatuses[i].url });
         onProgress({
           total: toProcess.length,
           completed: i,
@@ -430,6 +446,8 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
           ownerName: source?.owner || '',
           desc: source?.desc || '',
         });
+
+        if (cancelled) return;
 
         itemStatuses[i] = {
           ...itemStatuses[i],
@@ -446,8 +464,21 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
 
       await new Promise((r) => setTimeout(r, 300));
       onProgress(null);
+      setDlProgress(null);
+      abortRef.current = { cancel: () => {} };
+
+      const failed = itemStatuses.filter((s) => s.status === 'error').length;
+      const success = itemStatuses.length - failed;
+      setDoneMsg(failed > 0
+        ? t('bilibili.importedSummaryWithSkipped', { imported: success, skipped: failed })
+        : t('bilibili.importedSummary', { count: success })
+      );
+      setState('done');
     } catch (err) {
       onProgress?.(null);
+      setDlProgress(null);
+      abortRef.current = { cancel: () => {} };
+      setState('error');
       setError(err instanceof Error ? err.message : t('importFailed'));
     }
   };
@@ -670,7 +701,9 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
             <Download className="w-6 h-6 text-[#00a1d6]" />
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-800">{t('bilibili.exporting')}</p>
+            <p className="text-sm font-medium text-gray-800">
+              {state === 'importing' ? t('bilibili.importing') : t('bilibili.exporting')}
+            </p>
               {dlProgress && (
                 <p className="text-xs text-gray-400 mt-1">
                   {dlProgress.title || `${dlProgress.current}/${dlProgress.total}`}
