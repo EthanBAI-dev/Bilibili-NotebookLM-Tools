@@ -5,10 +5,11 @@ import {
   importText,
   getCurrentTabUrl,
   getAllTabUrls,
+  getNotebookId,
 } from '@/services/notebooklm';
 import { convertHtmlToMarkdown } from '@/services/pdf-generator';
-import { getHistory, clearHistory } from '@/services/history';
-import { fetchPodcast, sanitizeFilename, buildFilename, buildEpisodeNoteText } from '@/services/podcast';
+import { getHistory, clearHistory, addToHistory } from '@/services/history';
+import { fetchPodcast, sanitizeFilename, buildFilename } from '@/services/podcast';
 import { fetchYouTube, fetchYouTubeMore, checkYouTubeSubtitles } from '@/services/youtube';
 import {
   fetchBilibiliVideo,
@@ -60,24 +61,35 @@ async function localizeRuntimeError(error?: string): Promise<string> {
   return error;
 }
 
+let _menuLock: Promise<void> | null = null;
+
 async function refreshContextMenus(): Promise<void> {
+  // Prevent concurrent calls from creating duplicate menu IDs
+  if (_menuLock) return _menuLock;
+  _menuLock = (async () => {
+    try {
+      await chrome.contextMenus.removeAll();
+    } catch {
+      // Ignore missing menu errors.
+    }
+
+    chrome.contextMenus.create({
+      id: MENU_ID_PAGE,
+      title: await runtimeT('menu.importPage'),
+      contexts: ['page'],
+    });
+
+    chrome.contextMenus.create({
+      id: MENU_ID_LINK,
+      title: await runtimeT('menu.importLink'),
+      contexts: ['link'],
+    });
+  })();
   try {
-    await chrome.contextMenus.removeAll();
-  } catch {
-    // Ignore missing menu errors.
+    await _menuLock;
+  } finally {
+    _menuLock = null;
   }
-
-  chrome.contextMenus.create({
-    id: MENU_ID_PAGE,
-    title: await runtimeT('menu.importPage'),
-    contexts: ['page'],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_ID_LINK,
-    title: await runtimeT('menu.importLink'),
-    contexts: ['link'],
-  });
 }
 
 // ── YouTube URL tracking: per-tab seq + debounce ──
@@ -446,6 +458,77 @@ async function detectBlockedContent(markdown: string, html: string, url: string)
 function needsTabBasedExtraction(url: string): boolean {
   return /^https?:\/\/(www\.)?(x\.com|twitter\.com)\//.test(url)
     || /^https?:\/\/developer\.huawei\.com\//.test(url);
+}
+
+/** Wait for a tab to finish loading, resolving on timeout rather than rejecting (best-effort, matches the rescue/repair tab-open pattern below). */
+function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, timeoutMs);
+    const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timeout);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+/**
+ * Extension messaging (chrome.tabs.sendMessage / port.postMessage) serializes
+ * payloads as JSON — an ArrayBuffer sent that way arrives as `{}` on the
+ * other side, not the actual bytes. Binary data has to travel as a base64
+ * string instead. Chunks the byte->char conversion at 32KB so it doesn't
+ * blow the call stack on String.fromCharCode(...bytes) for large files.
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Send a file to the NotebookLM content script in `tabId` over a dedicated
+ * port, split into bounded-size base64 chunks (see arrayBufferToBase64) so a
+ * single message never has to carry the whole payload.
+ */
+function sendAudioFileToTab(
+  tabId: number,
+  buffer: ArrayBuffer,
+  filename: string,
+  mimeType: string,
+): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const port = chrome.tabs.connect(tabId, { name: 'audio-upload' });
+    let settled = false;
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type !== 'result' || settled) return;
+      settled = true;
+      if (msg.success) resolve(true);
+      else reject(new Error(msg.error || '导入到 NotebookLM 失败'));
+      port.disconnect();
+    });
+    port.onDisconnect.addListener(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('与 NotebookLM 页面的连接已断开'));
+    });
+
+    const CHUNK_CHARS = 3_000_000; // ~2.2MB of raw bytes per message
+    const base64 = arrayBufferToBase64(buffer);
+    const totalChunks = Math.max(1, Math.ceil(base64.length / CHUNK_CHARS));
+    port.postMessage({ type: 'start', filename, mimeType, totalChunks });
+    for (let i = 0; i < totalChunks; i++) {
+      port.postMessage({ type: 'chunk', index: i, data: base64.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS) });
+    }
+    port.postMessage({ type: 'end' });
+  });
 }
 
 async function rescueSources(urls: string[], targetTabId?: number): Promise<RescueResult[]> {
@@ -1037,17 +1120,68 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
     }
     return { added };
   }
-  // Import one podcast episode's shownotes as text — episode audio itself is
-  // never fetched or uploaded, only the description already carried on the
-  // episode object from FETCH_PODCAST.
+  // Import a podcast episode as an audio file upload to NotebookLM.
+  // 1. Download the audio in the service worker (no tab needed for this part)
+  // 2. Resolve the notebook the user actually has selected in the extension,
+  //    and reuse an existing tab already on it, or open one hidden
+  //    (active: false) — mirrors the tab lifecycle _tabBasedExtractWithProgress
+  //    already uses for rescue/repair, so the user never sees a tab open.
+  // 3. Stream the audio bytes to that tab's content script over a port for
+  //    UI-automated upload, then close the tab if we're the one who opened it.
   if (type === 'IMPORT_PODCAST_EPISODE') {
     const { podcast, episode } = message as any as { podcast: PodcastInfo; episode: PodcastEpisode };
     await setOpState({ active: true, phase: 'importing', kind: 'import', current: 0, total: 1, title: episode.title, timestamp: Date.now() });
+    let openedTabId: number | undefined;
     try {
-      const content = buildEpisodeNoteText(podcast, episode);
-      const success = await importText(content, `${podcast.name} - ${episode.title}`, senderTabId);
-      return { success };
+      // Step 1: Download audio
+      const resp = await fetch(episode.audioUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!resp.ok) throw new Error(`下载音频失败: HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      if (blob.size > 100 * 1024 * 1024) throw new Error('音频文件超过 100MB 限制');
+      const arrayBuffer = await blob.arrayBuffer();
+
+      // Step 2: Resolve the target notebook and get a tab open on it
+      const notebookId = await getNotebookId();
+      const notebookUrl = `https://notebooklm.google.com/notebook/${notebookId}`;
+      const existing = await chrome.tabs.query({ url: `${notebookUrl}*` });
+      let tabId = existing.find((t) => t.id)?.id;
+      if (!tabId) {
+        const tab = await chrome.tabs.create({ url: notebookUrl, active: false });
+        if (!tab.id) throw new Error('无法打开 NotebookLM 标签页');
+        tabId = tab.id;
+        openedTabId = tabId;
+        await waitForTabLoad(tabId, 15000);
+        // Give the notebook's Angular SPA time to hydrate before the "add
+        // source" dialog and its buttons are actually clickable.
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+
+      // Step 3: Stream the audio to that tab for UI-automated upload
+      const filename = `${sanitizeFilename(podcast.name)} - ${sanitizeFilename(episode.title)}.mp3`;
+      await sendAudioFileToTab(tabId, arrayBuffer, filename, 'audio/mpeg');
+
+      const historyTitle = `${podcast.name} - ${episode.title}`;
+      await addToHistory(episode.audioUrl, 'success', historyTitle);
+      return { success: true };
+    } catch (error) {
+      // Must throw, not return { success: false } — the outer onMessage
+      // wrapper (line ~382) only produces a top-level `success: false` when
+      // this handler rejects. A normal `return` here, even one shaped like
+      // { success: false }, gets wrapped as { success: true, data: {...} } —
+      // callers checking resp.success (the standard pattern used by every
+      // other handler, e.g. PodcastImport.tsx) would see `true` and report
+      // this as a successful import despite it having failed.
+      const errMsg = error instanceof Error ? error.message : '未知错误';
+      console.error('[podcast] Failed to import audio:', error);
+      await addToHistory(episode.audioUrl, 'error', `${podcast.name} - ${episode.title}`, errMsg);
+      throw new Error(errMsg);
     } finally {
+      if (openedTabId) {
+        try { await chrome.tabs.remove(openedTabId); } catch { /* already closed */ }
+      }
       clearOpState();
     }
   }

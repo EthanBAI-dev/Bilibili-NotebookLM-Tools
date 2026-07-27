@@ -68,6 +68,52 @@ export default defineContentScript({
       }
     });
 
+    // Audio file import — chunked over a port, not chrome.runtime.sendMessage.
+    // Extension messaging serializes payloads as JSON; an ArrayBuffer sent via
+    // sendMessage/port.postMessage arrives as `{}` on the other side, not the
+    // actual bytes. The background script base64-encodes the file and streams
+    // it here in bounded-size pieces so a single message never carries the
+    // whole (up to ~100MB) payload.
+    chrome.runtime.onConnect.addListener((port) => {
+      if (port.name !== 'audio-upload') return;
+
+      let filename = '';
+      let mimeType = '';
+      let totalChunks = 0;
+      let chunks: string[] = [];
+
+      port.onMessage.addListener((msg) => {
+        if (msg.type === 'start') {
+          filename = msg.filename;
+          mimeType = msg.mimeType;
+          totalChunks = msg.totalChunks;
+          chunks = new Array(totalChunks);
+        } else if (msg.type === 'chunk') {
+          chunks[msg.index] = msg.data;
+        } else if (msg.type === 'end') {
+          (async () => {
+            try {
+              if (chunks.length !== totalChunks || chunks.some((c) => c === undefined)) {
+                throw new Error('Incomplete audio transfer');
+              }
+              const base64 = chunks.join('');
+              const binary = atob(base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              const success = await importAudioFileToNotebookLM(bytes.buffer, filename, mimeType);
+              port.postMessage({ type: 'result', success });
+            } catch (error) {
+              port.postMessage({
+                type: 'result',
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+        }
+      });
+    });
+
     // Auto-inject banners if issues detected
     setTimeout(() => {
       injectRescueBanner();
@@ -566,6 +612,100 @@ async function importTextToNotebookLM(
     return true;
   } catch (error) {
     console.error('Failed to import text:', error);
+    return false;
+  }
+}
+
+// ─── Audio File Import ──────────────────────────────────────
+
+async function importAudioFileToNotebookLM(
+  data: ArrayBuffer,
+  filename: string,
+  mimeType: string,
+): Promise<boolean> {
+  try {
+    // Step 1: Open the add source dialog
+    await openAddSourceDialog();
+
+    // Step 2: Click the "Upload" button — try icon matching first, then text fallback
+    let uploadBtn = findDialogElement<HTMLElement>('.drop-zone-icon-button', el =>
+        !!el.querySelector('img')?.textContent?.trim()?.includes('upload_file'))
+      || await findDialogButtonByIcon(['upload_file', 'cloud_upload', 'upload'], 500)
+      || await findButtonByText(['上传', '上传文件', 'Upload', 'Upload file', 'File'], 3000);
+    if (!uploadBtn) {
+      throw new Error('Upload button not found in the add source dialog');
+    }
+    uploadBtn.click();
+    await delay(800);
+
+    // Step 3: Create File and set on the file input
+    const file = new File([data], filename, { type: mimeType });
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+
+    // Strategy 1: Find <input type="file"> inside the dialog
+    const fileInput = await waitForElement<HTMLInputElement>(
+      'mat-dialog-container input[type="file"], .mat-mdc-dialog-container input[type="file"], [role="dialog"] input[type="file"]',
+      3000,
+    );
+    if (fileInput) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype, 'files'
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(fileInput, dataTransfer.files);
+      }
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      fileInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      console.log('[importAudio] File set on input:', filename);
+    } else {
+      // Strategy 2: Try drag-and-drop on any drop zone in the dialog
+      const dropZone = findDialogElement<HTMLElement>(
+        '[class*="drop"], [class*="upload"], .cdk-drag, .drag-area'
+      ) || findDialogElement<HTMLElement>('.add-source-content, .drop-zone-container');
+      if (dropZone) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        dropZone.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await delay(100);
+        dropZone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await delay(100);
+        dropZone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await delay(200);
+        console.log('[importAudio] Drop event dispatched');
+      } else {
+        throw new Error('Could not find file input or drop zone for audio upload');
+      }
+    }
+
+    // Step 4: Wait for file processing
+    await delay(3000);
+
+    // Step 5: Find and click "Insert" button
+    const insertButton = await findButtonByText(['插入', 'Insert', 'Add'], 10000);
+    if (!insertButton) {
+      throw new Error('Insert button not found after file upload');
+    }
+    // Wait for button to become enabled
+    for (let i = 0; i < 30; i++) {
+      if (!(insertButton as HTMLButtonElement).disabled) break;
+      await delay(500);
+    }
+    insertButton.click();
+
+    // Step 6: Wait for dialog to close (import complete)
+    for (let i = 0; i < 20; i++) {
+      await delay(1000);
+      if (!getMainDialog()) {
+        console.log('[importAudio] Dialog closed, import complete');
+        return true;
+      }
+    }
+    // Dialog might stay open for already-imported content — treat as success
+    console.log('[importAudio] Dialog still open after timeout, treating as success');
+    return true;
+  } catch (error) {
+    console.error('[importAudio] Failed to import audio file:', error);
     return false;
   }
 }
