@@ -28,11 +28,13 @@ function getPlatformConfig(platform: string) {
   return { name: platformNames[platform] || t('app.tabPodcast'), ...styles };
 }
 
+// No onImportHandlerChange here, unlike the other panels: episodes are audio and
+// there is no podcast -> NotebookLM path in the background (only DOWNLOAD_PODCAST).
+// App renders an explanatory hint in place of the shared import button instead.
 interface Props {
   initialUrl?: string;
   fetchTrigger?: number;
   onProgress?: (progress: ImportProgress | null) => void;
-  onImportHandlerChange?: (handler: (() => void) | null) => void;
 }
 
 export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {

@@ -104,6 +104,7 @@ const zh = {
   'podcast.formatXyz1': '小宇宙单集：xiaoyuzhoufm.com/episode/...',
   'podcast.formatXyz2': '小宇宙节目：xiaoyuzhoufm.com/podcast/...',
   'podcast.episodeList': '播客列表',
+  'podcast.importHint': '播客暂不支持一键导入：请先下载音频，再拖入 NotebookLM',
 
   // ── BilibiliImport ──
   'app.tabBilibili': '哔哩哔哩',
@@ -524,6 +525,7 @@ const en: Record<keyof typeof zh, string> = {
   'podcast.formatXyz1': 'Xiaoyuzhou episode: xiaoyuzhoufm.com/episode/...',
   'podcast.formatXyz2': 'Xiaoyuzhou podcast: xiaoyuzhoufm.com/podcast/...',
   'podcast.episodeList': 'Podcast List',
+  'podcast.importHint': 'One-click import is not available for podcasts — download the audio, then drag it into NotebookLM',
 
   // ── BilibiliImport ──
   'app.tabBilibili': 'Bilibili',
