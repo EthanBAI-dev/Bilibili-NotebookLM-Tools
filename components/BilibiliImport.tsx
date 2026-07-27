@@ -34,10 +34,12 @@ interface Props {
  */
 function detectFetchMode(url: string): FetchMode {
   if (isBilibiliSpaceUrl(url)) return 'space';
-  if (/bilibili\.com\/list\/(watchlater|fav)/.test(url)) return 'favorite';
-  if (/bilibili\.com\/list\/ml/.test(url)) return 'favorite';
+  // Delegate to isBilibiliFavUrl (services/bilibili.ts) instead of re-deriving
+  // the pattern here — the duplicated regex missed /medialist/play/ml{id},
+  // which isBilibiliFavUrl already recognizes, so those links fell through to
+  // 'single' and got rejected as unparseable.
+  if (isBilibiliFavUrl(url)) return 'favorite';
   if (/bilibili\.com\/video\/.*\?p=\d+/.test(url)) return 'season';
-  if (/bilibili\.com\/video\/BV/.test(url)) return 'single';
   return 'single';
 }
 
