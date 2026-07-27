@@ -922,10 +922,13 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
           return;
         }
 
-        // Broadcast to sidepanel
+        // Broadcast to sidepanel. tabId is required: every YouTube tab reports
+        // its SPA navigations here, including background tabs autoplaying the
+        // next video, and the panel must ignore anything but its active tab.
         broadcastToSidepanel({
           type: 'YT_FETCH_RESULT',
           url: currentUrl,
+          tabId,
           result,
         });
       } catch (err) {
@@ -933,6 +936,7 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
         broadcastToSidepanel({
           type: 'YT_FETCH_RESULT',
           url: currentUrl,
+          tabId,
           result: null,
           error: err instanceof Error ? err.message : 'Fetch failed',
         });

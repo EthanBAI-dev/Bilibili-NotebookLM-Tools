@@ -167,9 +167,16 @@ export default function App() {
 
     // ── Listen for pre-fetched YouTube results from background ──
     const handleRuntimeMessage = (msg: Record<string, unknown>) => {
-      if (msg.type === 'YT_FETCH_RESULT') {
-        const { url, result, error } = msg as { type: string; url: string; result: YouTubeResult | null; error?: string };
-        if (!url) return;
+      if (msg.type !== 'YT_FETCH_RESULT') return;
+      const { url, tabId, result } = msg as {
+        type: string; url: string; tabId?: number; result: YouTubeResult | null;
+      };
+      if (!url) return;
+
+      // Every YouTube tab reports its SPA navigations, so a background tab
+      // autoplaying the next video would otherwise yank the panel over to it.
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabId !== undefined && tabs[0]?.id !== tabId) return;
 
         if (result && url !== prefetchedYouTubeUrlRef.current) {
           // Valid result for a new URL
@@ -181,7 +188,7 @@ export default function App() {
           }
         } else if (!result && /(?:youtube\.com|youtu\.be)\//.test(url)) {
           // Fetch failed (e.g. YouTube homepage, search — not a video/playlist/channel)
-          // Clear stale result and let detectUrl trigger YouTubeImport to show error state
+          // Clear stale result and let detection drive YouTubeImport's error state
           if (url !== lastDetectedUrlRef.current) {
             prefetchedYouTubeUrlRef.current = '';
             setPrefetchedYouTubeResult(null);
@@ -189,7 +196,7 @@ export default function App() {
             setInitialYouTubeUrl(url);
           }
         }
-      }
+      });
     };
     chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
