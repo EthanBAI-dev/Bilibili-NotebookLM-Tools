@@ -258,7 +258,11 @@ export async function fetchBilibiliUserVideos(mid: string): Promise<BilibiliSpac
         bvid: v.bvid,
         cid: 0, // Will be resolved later during subtitle fetch
         title: v.title,
-        page: pageNum,
+        // Position in the overall list, not the API page number (pageNum) —
+        // every video fetched in the same API page previously got the same
+        // `page` value, so the UI's "P{page}" label repeated across each
+        // batch of 50 instead of counting up.
+        page: allVideos.length + 1,
         url: `https://www.bilibili.com/video/${v.bvid}`,
         duration: v.length ? parseInt(v.length, 10) : undefined,
       });
@@ -354,7 +358,10 @@ export async function fetchBilibiliFavoriteList(url: string): Promise<BilibiliFa
           aid: m.aid,
           title: m.title || m.name || '',
           part: undefined,
-          page: m.page || allVideos.length + 1,
+          // `m.page` is the media-list API's own field for that single video's
+          // part count (almost always 1), not its position in this folder —
+          // `1 || allVideos.length + 1` always won, so every entry showed "P1".
+          page: allVideos.length + 1,
           url: `https://www.bilibili.com/video/${m.bvid}`,
           duration: m.duration,
         });
