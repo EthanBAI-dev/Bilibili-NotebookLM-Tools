@@ -39,6 +39,90 @@ interface NlmTokens {
   bl: string;
 }
 
+/** Build the homepage URL for a given account slot. */
+function tokenPageUrl(authuser?: number): string {
+  return authuser && authuser > 0
+    ? `${NLM_HOME_URL}?authuser=${authuser}&pageId=none`
+    : NLM_HOME_URL;
+}
+
+/** Pull the token pair out of a page's HTML. Shared by both strategies below. */
+function extractTokens(html: string): NlmTokens | null {
+  const at = html.match(/"SNlM0e":"([^"]+)"/)?.[1] ?? null;
+  const bl = html.match(/"cfb2h":"([^"]+)"/)?.[1] ?? null;
+  return at && bl ? { at, bl } : null;
+}
+
+/** Resolve once the tab finishes loading, or on timeout (best-effort). */
+function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
+      if (id === tabId && info.status === 'complete') done();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+/**
+ * Fallback token source: read them out of a real notebooklm.google.com tab.
+ *
+ * The background fetch below is a bare `fetch()` from a chrome-extension://
+ * origin, which Google is free to answer differently than it answers a real
+ * browser navigation — an interstitial, a consent hop, an account chooser,
+ * or anything else that leaves no tokens in the body. A genuine tab carries
+ * the full session and always renders the real page, so scraping the DOM
+ * there works whenever the user can actually reach NotebookLM in the browser.
+ *
+ * Same trick services/youtube-tunnel.ts already uses for YouTube's edge,
+ * kept deliberately simpler: this only ever runs after the cheap path has
+ * already failed, so it just opens a hidden tab, scrapes, and closes it
+ * rather than maintaining a cached long-lived one. `executeScript` runs in
+ * the default ISOLATED world, which still shares the DOM — no MAIN-world
+ * access needed to read the inline JSON.
+ */
+async function fetchTokensFromTab(authuser?: number): Promise<NlmTokens | null> {
+  let tabId: number | undefined;
+  try {
+    const tab = await chrome.tabs.create({ url: tokenPageUrl(authuser), active: false });
+    tabId = tab.id;
+    if (tabId === undefined) return null;
+
+    await waitForTabComplete(tabId, 20000);
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const html = document.documentElement.outerHTML;
+        const at = html.match(/"SNlM0e":"([^"]+)"/)?.[1] ?? null;
+        const bl = html.match(/"cfb2h":"([^"]+)"/)?.[1] ?? null;
+        return { at, bl, finalUrl: location.href };
+      },
+    });
+
+    const scraped = results?.[0]?.result;
+    if (!scraped?.at || !scraped?.bl) {
+      console.warn(`[notebook-api] Tab fallback found no tokens — tab landed on: ${scraped?.finalUrl ?? 'unknown'}`);
+      return null;
+    }
+
+    console.log(`[notebook-api] Tokens OK via tab fallback (authuser=${authuser})`);
+    return { at: scraped.at, bl: scraped.bl };
+  } catch (err) {
+    console.warn(`[notebook-api] Tab fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  } finally {
+    if (tabId !== undefined) {
+      try { await chrome.tabs.remove(tabId); } catch { /* already gone */ }
+    }
+  }
+}
+
 /**
  * Extract authentication tokens from NotebookLM homepage HTML.
  *
@@ -49,15 +133,24 @@ interface NlmTokens {
  * Google's backend may reject the request or serve the wrong
  * account's data.
  *
+ * Tries the cheap background fetch first; if that comes back without tokens
+ * for any reason, falls back to scraping a real tab (fetchTokensFromTab).
+ *
  * @param authuser - Optional Google account authuser index (0, 1, 2…).
  *                   When > 0, appends ?authuser=X to the request URL,
  *                   fetching the page for that specific account.
  */
 async function fetchTokens(authuser?: number): Promise<NlmTokens | null> {
+  const viaFetch = await fetchTokensViaFetch(authuser);
+  if (viaFetch) return viaFetch;
+
+  console.warn('[notebook-api] Background fetch yielded no tokens — retrying via a real tab');
+  return fetchTokensFromTab(authuser);
+}
+
+async function fetchTokensViaFetch(authuser?: number): Promise<NlmTokens | null> {
   try {
-    const url = authuser && authuser > 0
-      ? `${NLM_HOME_URL}?authuser=${authuser}&pageId=none`
-      : NLM_HOME_URL;
+    const url = tokenPageUrl(authuser);
     console.log(`[notebook-api] Fetching tokens from: ${url}`);
 
     // Use AbortController timeout — matching the reference's fetchWithTimeout
@@ -93,15 +186,9 @@ async function fetchTokens(authuser?: number): Promise<NlmTokens | null> {
       return null;
     }
 
-    // Extract both tokens from the HTML
-    // Pattern matches the exact format Google embeds: "key":"value"
-    const atMatch = html.match(/"SNlM0e":"([^"]+)"/);
-    const blMatch = html.match(/"cfb2h":"([^"]+)"/);
-    const at = atMatch ? atMatch[1] : null;
-    const bl = blMatch ? blMatch[1] : null;
+    const tokens = extractTokens(html);
 
-    if (!at || !bl) {
-      console.warn(`[notebook-api] Tokens: at=${!!at} bl=${!!bl} (authuser=${authuser})`);
+    if (!tokens) {
       // finalUrl is the single most useful clue here: if it's an
       // accounts.google.com URL the session/authuser is the problem, if it's
       // some other Google host the app has moved and NLM_HOME_URL is stale.
@@ -110,8 +197,8 @@ async function fetchTokens(authuser?: number): Promise<NlmTokens | null> {
       return null;
     }
 
-    console.log(`[notebook-api] Tokens OK: at=${at.slice(0, 8)}... bl=${bl.slice(0, 8)}... (authuser=${authuser})`);
-    return { at, bl };
+    console.log(`[notebook-api] Tokens OK: at=${tokens.at.slice(0, 8)}... bl=${tokens.bl.slice(0, 8)}... (authuser=${authuser})`);
+    return tokens;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[notebook-api] Token fetch: ${msg}`);
