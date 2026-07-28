@@ -171,6 +171,14 @@ async function fetchTokensViaFetch(authuser?: number): Promise<NlmTokens | null>
       credentials: 'include',
       redirect: 'follow',
       signal: controller.signal,
+      // `at`/`bl` are minted per page render and expire; a cached copy of the
+      // homepage yields tokens the RPC endpoint then rejects. Forcing a
+      // revalidation costs one conditional request and removes a failure mode
+      // that otherwise looks exactly like being signed out.
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
     });
     clearTimeout(timeoutId);
 
@@ -225,6 +233,29 @@ function stripAntiXssi(text: string): string {
     return text.slice(prefix.length).trim();
   }
   return text;
+}
+
+/**
+ * True when a batchexecute response is a sign-in/consent page rather than RPC
+ * data.
+ *
+ * Google answers an unauthenticated (or wrongly-attributed) RPC with HTTP 200
+ * carrying an HTML login page, not an error status. Without this check that
+ * HTML flows into the array parsers below, which find no notebooks and report
+ * "0 notebooks" — indistinguishable from an account that genuinely has none.
+ * Callers need to tell those apart to know whether re-authenticating helps.
+ */
+function isAuthWall(responseText: string): boolean {
+  const head = responseText.slice(0, 400).toLowerCase();
+  return head.includes('<!doctype html>') || head.includes('accounts.google.com');
+}
+
+/** Raised when NotebookLM answered with a sign-in wall instead of RPC data. */
+export class NotebookAuthError extends Error {
+  constructor(message = 'Not signed in to NotebookLM') {
+    super(message);
+    this.name = 'NotebookAuthError';
+  }
 }
 
 async function getCachedNotebooks(): Promise<NotebookItem[] | null> {
@@ -315,6 +346,11 @@ export async function fetchNotebooks(): Promise<NotebookItem[]> {
       credentials: 'include',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        // Google's batchexecute front-end gates on this header: a request
+        // without it looks cross-site and is answered with a sign-in page
+        // instead of RPC data, no matter how valid `at`/`bl` are. Every
+        // Google first-party caller sends it, and so must we.
+        'X-Same-Domain': '1',
       },
       body,
     });
@@ -325,6 +361,10 @@ export async function fetchNotebooks(): Promise<NotebookItem[]> {
     }
 
     const text = await resp.text();
+    if (isAuthWall(text)) {
+      console.warn('[notebook-api] Notebook list came back as a sign-in page — session is not usable');
+      return [];
+    }
     return parseNotebookList(text);
   } catch (e) {
     console.error('[notebook-api] Fetch error:', e);
@@ -424,6 +464,7 @@ async function rpcCall(
     credentials: 'include',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'X-Same-Domain': '1',
     },
     body,
   });
@@ -433,6 +474,13 @@ async function rpcCall(
 
   if (!resp.ok) {
     throw new Error(`[notebook-api] RPC ${rpcId} failed: HTTP ${resp.status}`);
+  }
+
+  // Checked before stripAntiXssi: a login page carries no ")]}'" prefix, so
+  // it would otherwise pass through untouched and fail later as a confusing
+  // JSON parse error rather than as the auth problem it actually is.
+  if (isAuthWall(text)) {
+    throw new NotebookAuthError(`RPC ${rpcId} was answered with a sign-in page`);
   }
 
   const cleaned = stripAntiXssi(text);
