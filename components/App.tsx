@@ -373,16 +373,21 @@ export default function App() {
           <NotebookSelector />
         </div>
 
-        {/* Unified Import button */}
-        <button
-          data-tour="import-button"
-          onClick={handleSharedImport}
-          disabled={!hasImportHandler}
-          className="w-full py-2.5 bg-notebooklm-blue hover:bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-btn hover:shadow-btn-hover transition-all duration-150 btn-press"
-        >
-          <Upload className="w-4 h-4" />
-          {t('notebook.importToNlm')}
-        </button>
+        {/* Unified Import button — hidden on the podcast tab, which is
+            download-only (see PodcastImport.tsx) and never registers an
+            import handler, so the button could only ever sit there greyed
+            out. The panel's own hint explains the download-then-drag flow. */}
+        {activeTab !== 'podcast' && (
+          <button
+            data-tour="import-button"
+            onClick={handleSharedImport}
+            disabled={!hasImportHandler}
+            className="w-full py-2.5 bg-notebooklm-blue hover:bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-btn hover:shadow-btn-hover transition-all duration-150 btn-press"
+          >
+            <Upload className="w-4 h-4" />
+            {t('notebook.importToNlm')}
+          </button>
+        )}
       </div>
 
       {/* First-time onboarding tour */}
