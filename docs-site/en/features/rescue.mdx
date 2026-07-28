@@ -1,17 +1,17 @@
 ---
 title: 'Source Rescue'
-description: 'Auto-detect and batch-fix failed NotebookLM source imports'
+description: 'Auto-detect and batch-fix failed Gemini Notebook source imports'
 ---
 
 ## Feature
 
-Sometimes NotebookLM imports fail (timeout, incomplete page load) or appear to succeed but have no actual content ("fake success"). NoteFlow's rescue feature detects these cases automatically.
+Sometimes Gemini Notebook imports fail (timeout, incomplete page load) or appear to succeed but have no actual content ("fake success"). NoteFlow's rescue feature detects these cases automatically.
 
-When you're on a NotebookLM notebook page, NoteFlow scans all sources, detects failures and fake successes, and shows a banner at the top of the side panel.
+When you're on a Gemini Notebook notebook page, NoteFlow scans all sources, detects failures and fake successes, and shows a banner at the top of the side panel.
 
 <Steps>
-  <Step title="Open a NotebookLM notebook">
-    Open any NotebookLM notebook page.
+  <Step title="Open a Gemini Notebook notebook">
+    Open any Gemini Notebook notebook page.
   </Step>
   <Step title="Auto-scan">
     NoteFlow automatically scans all sources in the notebook and detects anomalies.
@@ -33,6 +33,6 @@ When you're on a NotebookLM notebook page, NoteFlow scans all sources, detects f
 
 ## Notes
 
-- Auto-scan only triggers on NotebookLM notebook pages
+- Auto-scan only triggers on Gemini Notebook notebook pages
 - Scanning is silent and does not interfere with your workflow
 - Rescue retries each failed source one by one

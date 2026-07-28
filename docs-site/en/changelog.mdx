@@ -8,7 +8,7 @@ description: 'NoteFlow version history'
 - 🎬 **Bilibili subtitle import**: Extract Bilibili video subtitles. Supports creator spaces, favorites, series/seasons
 - 🧩 **Side panel redesign**: Popup upgraded to Side Panel — opens in place, auto-detects current site and matches import tool
 - 🔄 **Auto site detection**: Auto-match Bilibili/YouTube/Podcast/AI Chat/Web — no manual tab switching needed
-- 👤 **Google account switching**: Switch NotebookLM Google accounts from the side panel header
+- 👤 **Google account switching**: Switch Gemini Notebook Google accounts from the side panel header
 - 🎓 **Onboarding tour**: 5-step guided tour after installation, covers all core features
 - 📋 **Settings panel**: New settings page with auto-rename toggle, replay tour, and more
 - 📊 **Import history**: View all import records with easy retry
@@ -17,22 +17,22 @@ description: 'NoteFlow version history'
 
 - 🎨 **Share card preserves AI conversation structure**: The previous extractor flattened paragraphs, lists, blockquotes, and bold formatting into a single run-on paragraph — multi-line answers (translations, side-by-side comparisons, definition lists) became unreadable in the share image. Claude/ChatGPT/Gemini extractors now emit cleaned HTML fragments which the offscreen Turndown batch-converts to Markdown, preserving paragraphs / headings / ordered & unordered lists / blockquotes / bold & italic / inline code / fenced code
 - 🛡️ **Share card renders via marked AST**: Walks markdown tokens into React nodes directly, avoiding raw HTML injection paths. Stray iframe/script tags that survive Turndown degrade to plain text automatically
-- ✨ **NotebookLM imports improve in step**: Conversation content imported into NotebookLM now retains the original Markdown structure, much nicer to read
+- ✨ **Gemini Notebook imports improve in step**: Conversation content imported into Gemini Notebook now retains the original Markdown structure, much nicer to read
 - 🔧 Popup selection preview strips Markdown symbols so `**` and `##` no longer leak into the list
 
 ## v1.7.4 — 2026-04-09
 
-- 🐛 **Fix broken auto-rename for pasted sources**: NotebookLM recently started sorting the source list alphabetically, which broke our old assumption that "new source == last in DOM order". `Pasted Text` defaults were never being renamed to the real title. Switched to a WeakSet diff to locate the new source, robust to any sort order.
+- 🐛 **Fix broken auto-rename for pasted sources**: Gemini Notebook recently started sorting the source list alphabetically, which broke our old assumption that "new source == last in DOM order". `Pasted Text` defaults were never being renamed to the real title. Switched to a WeakSet diff to locate the new source, robust to any sort order.
 - 🏷️ **Emoji prefixes for rescue / repair**: Rescued sources now display as `🛟 Article Title`; WeChat/X fake-success sources that were repaired display as `🔧 Article Title` — so you can tell at a glance which sources have been processed.
 - ⚙️ **New "Auto-rename default-named sources" toggle**: Popup → More panel → Settings card. Turns the entire auto-rename behavior on/off dynamically.
 
 ## v1.7.0 — 2026-03-24
 
-- ▶️ **YouTube Import**: Import individual videos, playlists, and channel videos into NotebookLM
+- ▶️ **YouTube Import**: Import individual videos, playlists, and channel videos into Gemini Notebook
   - Auto-detects current YouTube tab URL for one-click import
   - Selective batch import for playlists/channels, with option to limit to the most recent N videos
   - Dual extraction strategy: InnerTube API + RSS
-- 🗑️ **Bulk Delete Revamp**: Uses NotebookLM's native checkboxes, with a new "More Actions" entry at the bottom of the source list
+- 🗑️ **Bulk Delete Revamp**: Uses Gemini Notebook's native checkboxes, with a new "More Actions" entry at the bottom of the source list
   - Confirmation dialog before deletion to prevent accidental removal
   - Supports SPA in-page navigation (no page refresh needed)
 - 🎓 Onboarding guide now includes YouTube step
@@ -51,7 +51,7 @@ description: 'NoteFlow version history'
 ## v1.6.6 — 2026-03-20
 
 - 🎯 Notebook target selector: choose a notebook from the dropdown and imports go directly there — no manual tab switching
-- 🚀 One-click import button: prominent yellow Import button on the bookmarks page for importing the current page to NotebookLM
+- 🚀 One-click import button: prominent yellow Import button on the bookmarks page for importing the current page to Gemini Notebook
 - 🎓 Onboarding: Welcome page + 5-step tooltip guide on install, covering all 4 core features, skippable and replayable from the More page
 - 🎨 Bookmarks panel color refresh: bookmark-related UI unified to blue, Import button highlighted in yellow
 - 🔧 Fix import opening homepage: initially auto-selected notebook now correctly persists to storage
@@ -128,7 +128,7 @@ description: 'NoteFlow version history'
 
 ## v1.1.40 — 2025-02-24
 
-- 📚 Verify English NotebookLM DOM matching
+- 📚 Verify English Gemini Notebook DOM matching
 - 🔧 Fix text matching for "Websites" (plural), "Paste any links" (plural), etc.
 
 ## v1.1.39 — 2025-02-24

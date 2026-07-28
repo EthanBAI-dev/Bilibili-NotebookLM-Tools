@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <strong>Bilibili、YouTube、ポッドキャスト、Webページ、AI会話を NotebookLM に一括インポート</strong>
+  <strong>Bilibili、YouTube、ポッドキャスト、Webページ、AI会話を Gemini Notebook に一括インポート</strong>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 ---
 
-NoteFlow は、Google NotebookLM にさまざまなソースからコンテンツを一括インポートする Chrome 拡張機能（Manifest V3、WXT フレームワーク）です。
+NoteFlow は、Google Gemini Notebook にさまざまなソースからコンテンツを一括インポートする Chrome 拡張機能（Manifest V3、WXT フレームワーク）です。
 
 ## ✨ 機能
 
@@ -41,7 +41,7 @@ NoteFlow は、Google NotebookLM にさまざまなソースからコンテン�
 ## 🔥 ハイライト
 
 - **サイドパネル UI** — 現在のサイトを自動検出し、適切なインポートツールを表示
-- **マルチアカウント** — サイドパネルから NotebookLM の Google アカウントを切替
+- **マルチアカウント** — サイドパネルから Gemini Notebook の Google アカウントを切替
 - **ターゲット Notebook** — Notebook を選択すれば直接インポート、タブ切替不要
 - **PDF 集約** — 複数記事を1つの PDF に統合、たった1ソーススロット
 - **AI 共有カード** — AI 会話を美しい画像として出力（JPEG / PNG / PDF）

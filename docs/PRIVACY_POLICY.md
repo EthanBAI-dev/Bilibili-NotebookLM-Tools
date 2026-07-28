@@ -4,7 +4,7 @@
 
 ## Overview
 
-NoteFlow is a free, open-source Chrome extension that helps you import content into Google NotebookLM. We are committed to protecting your privacy.
+NoteFlow is a free, open-source Chrome extension that helps you import content into Google Gemini Notebook. We are committed to protecting your privacy.
 
 ## Data Collection
 
@@ -31,15 +31,15 @@ All processing happens **entirely in your browser**:
 |---|---|
 | `activeTab` | Access the current tab to extract content for import |
 | `storage` | Store bookmarks, settings, and import history locally |
-| `scripting` | Inject content scripts to extract page content and interact with NotebookLM |
-| `tabs` | Read tab URLs to detect supported platforms (NotebookLM, AI chat sites, doc sites) |
-| `contextMenus` | Add "Import to NotebookLM" to the right-click menu |
+| `scripting` | Inject content scripts to extract page content and interact with Gemini Notebook |
+| `tabs` | Read tab URLs to detect supported platforms (Gemini Notebook, AI chat sites, doc sites) |
+| `contextMenus` | Add "Import to Gemini Notebook" to the right-click menu |
 | `notifications` | Show import completion notifications |
 | Host permissions (`notebooklm.google.com`, `claude.ai`, `chatgpt.com`, `gemini.google.com`) | Interact with these specific sites for content extraction and import |
 
 ## Third-Party Services
 
-The extension communicates **only** with the websites you choose to import from, and with NotebookLM to perform the import. No other third-party services are contacted.
+The extension communicates **only** with the websites you choose to import from, and with Gemini Notebook to perform the import. No other third-party services are contacted.
 
 ## Data Storage
 
