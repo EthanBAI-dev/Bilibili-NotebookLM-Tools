@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <strong>Batch import Bilibili, YouTube, podcasts, web pages & AI chats into NotebookLM — one click</strong>
+  <strong>Batch import Bilibili, YouTube, podcasts, web pages & AI chats into Gemini Notebook — one click</strong>
 </p>
 
 <p align="center">
@@ -23,9 +23,9 @@
 
 ---
 
-NotebookLM is the best AI knowledge tool, but getting content into it is painful. **NoteFlow fixes that.**
+Gemini Notebook is the best AI knowledge tool, but getting content into it is painful. **NoteFlow fixes that.**
 
-A Chrome extension (Manifest V3) built with the WXT framework that batch-imports content from multiple sources into Google NotebookLM.
+A Chrome extension (Manifest V3) built with the WXT framework that batch-imports content from multiple sources into Google Gemini Notebook.
 
 ## ✨ Features
 
@@ -43,7 +43,7 @@ A Chrome extension (Manifest V3) built with the WXT framework that batch-imports
 ## 🔥 Highlights
 
 - **Side Panel UI** — Auto-detects the current site and matches the right import tool
-- **Multi-Account** — Switch NotebookLM Google accounts from the side panel header
+- **Multi-Account** — Switch Gemini Notebook Google accounts from the side panel header
 - **Target Notebook** — Select a notebook, import directly without switching tabs
 - **PDF Aggregation** — Merge articles into one PDF, takes only 1 source slot
 - **AI Share Cards** — Export AI conversations as beautiful images (JPEG / PNG / PDF)

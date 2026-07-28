@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <strong>NoteFlow — B站、YouTube、播客、网页、AI 对话，一键批量导入 NotebookLM</strong>
+  <strong>NoteFlow — B站、YouTube、播客、网页、AI 对话，一键批量导入 Gemini Notebook</strong>
 </p>
 
 <p align="center">
@@ -23,9 +23,9 @@
 
 ---
 
-NotebookLM 是最强的 AI 知识工具，但「把内容喂进去」这一步太痛苦了。**NoteFlow 解决这个问题。**
+Gemini Notebook 是最强的 AI 知识工具，但「把内容喂进去」这一步太痛苦了。**NoteFlow 解决这个问题。**
 
-这是一款 Chrome 扩展（Manifest V3），基于 WXT 框架构建，支持从多源一键批量导入内容到 Google NotebookLM。
+这是一款 Chrome 扩展（Manifest V3），基于 WXT 框架构建，支持从多源一键批量导入内容到 Google Gemini Notebook。
 
 ## ✨ 核心功能
 
@@ -33,7 +33,7 @@ NotebookLM 是最强的 AI 知识工具，但「把内容喂进去」这一步�
 |------|------|
 | 🎬 **Bilibili 字幕导入** | 提取视频 CC 字幕 / AI 字幕，支持逐视频、合并（省配额）、ZIP 下载三种模式 |
 | ▶️ **YouTube 导入** | 单个视频、播放列表、频道批量导入，支持 "Load more" 分页加载 |
-| 🎙️ **播客导入** | Apple Podcasts 和小宇宙 FM — 自动检测页面，下载音频导入 NotebookLM |
+| 🎙️ **播客导入** | Apple Podcasts 和小宇宙 FM — 自动检测页面，下载音频导入 Gemini Notebook |
 | 📋 **网页导入** | 任意 URL、Substack、微信公众号、X.com 长文 — 正文提取，一键导入 |
 | 📚 **文档站导入** | 识别 14+ 文档框架（Docusaurus、VitePress、GitBook 等），全站批量导入或导出 PDF |
 | 🤖 **AI 对话导入** | Claude、ChatGPT、Gemini — 自动提取问答对，选择性导入，还支持生成分享卡片 |
@@ -43,7 +43,7 @@ NotebookLM 是最强的 AI 知识工具，但「把内容喂进去」这一步�
 ## 🔥 亮点特性
 
 - **侧面板 UI** — 打开扩展即自动检测当前站点，匹配对应导入工具
-- **Google 多账号切换** — 侧面板顶部可切换 NotebookLM 的 Google 账号
+- **Google 多账号切换** — 侧面板顶部可切换 Gemini Notebook 的 Google 账号
 - **智能目标 Notebook** — 选择目标 Notebook，内容直接导入无需切换标签页
 - **聚合 PDF 导出** — 多篇文章合并为一个 PDF，只占 1 个来源配额，突破 50 来源限制
 - **AI 分享卡片** — 将 AI 对话生成为精美分享图片（JPEG / PNG / PDF）

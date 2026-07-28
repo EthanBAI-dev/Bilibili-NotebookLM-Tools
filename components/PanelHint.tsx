@@ -14,7 +14,7 @@ export function PanelHint({ children }: Props) {
   return (
     <div className="flex items-start gap-1.5 px-2.5 py-2 mt-2 bg-notebooklm-light/50 border border-notebooklm-blue/10 rounded-lg">
       <Info className="w-3 h-3 mt-[2px] text-notebooklm-blue/70 flex-shrink-0" />
-      <p className="text-[10.5px] leading-relaxed text-gray-600">{children}</p>
+      <p className="text-[11px] leading-relaxed text-gray-500">{children}</p>
     </div>
   );
 }

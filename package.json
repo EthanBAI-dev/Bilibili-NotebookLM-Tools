@@ -1,7 +1,7 @@
 {
   "name": "noteflow",
   "version": "0.0.3",
-  "description": "NoteFlow - Extract subtitles & content from various sources and import to NotebookLM",
+  "description": "NoteFlow - Extract subtitles & content from various sources and import to Gemini Notebook",
   "private": true,
   "type": "module",
   "scripts": {

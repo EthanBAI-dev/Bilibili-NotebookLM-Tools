@@ -179,7 +179,7 @@ export function NotebookSelector() {
               <button
                 onClick={handleOpenCurrentNotebook}
                 className="w-7 h-7 flex items-center justify-center rounded hover:bg-blue-100 transition-all duration-150 group"
-                title="Open notebook in NotebookLM"
+                title="Open notebook in Gemini Notebook"
               >
                 <Pencil className="w-3.5 h-3.5 text-blue-600 group-hover:text-blue-700" />
               </button>

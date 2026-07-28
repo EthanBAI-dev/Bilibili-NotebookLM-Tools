@@ -261,7 +261,7 @@ export function WebImport({ onImportHandlerChange, onProgress }: Props) {
             <button
               type="button"
               onClick={() => setHelpOpen((v) => !v)}
-              className="flex items-center justify-center w-4 h-4 rounded-full text-gray-400 hover:text-[#00a1d6] hover:bg-sky-50 transition-colors"
+              className="flex items-center justify-center w-4 h-4 rounded-full text-gray-400 hover:text-notebooklm-blue hover:bg-notebooklm-light transition-colors"
               aria-label={t('web.listHelpLabel')}
               title={t('web.listHelpLabel')}
             >
@@ -284,7 +284,7 @@ export function WebImport({ onImportHandlerChange, onProgress }: Props) {
                 {t('web.selectedTabs', { selected: selectedIds.size, total: allTabs.length })}
               </span>
               <div className="flex gap-2 text-xs">
-                <button onClick={selectAll} className="text-[#00a1d6] hover:underline">{t('selectAll')}</button>
+                <button onClick={selectAll} className="text-notebooklm-blue hover:underline">{t('selectAll')}</button>
                 <button onClick={deselectAll} className="text-gray-400 hover:underline">{t('deselectAll')}</button>
               </div>
             </div>
@@ -307,7 +307,7 @@ export function WebImport({ onImportHandlerChange, onProgress }: Props) {
                         type="checkbox"
                         checked={selectedIds.has(tab.id)}
                         onChange={() => toggleTab(tab.id)}
-                        className="rounded border-gray-300 text-[#00a1d6] focus:ring-[#00a1d6]"
+                        className="rounded border-gray-300 text-notebooklm-blue focus:ring-notebooklm-blue"
                       />
                       {tab.favicon ? (
                         <img src={tab.favicon} className="w-4 h-4 flex-shrink-0 rounded-sm" alt="" />
