@@ -229,6 +229,14 @@ export default function App() {
     importHandlerRef.current?.();
   };
 
+  const activeTabHint = {
+    bilibili: t('app.hintBilibili'),
+    youtube: t('app.hintYouTube'),
+    podcast: t('app.hintPodcast'),
+    web: t('app.hintWeb'),
+    claude: t('app.hintAI'),
+  }[activeTab] ?? '';
+
   return (
     <div className="min-h-[480px] bg-surface">
       {/* Header — frosted glass */}
@@ -323,13 +331,11 @@ export default function App() {
         </div>
         {activeTab === 'bilibili' && (
           <div className="animate-fade-in">
-            <PanelHint>{t('app.hintBilibili')}</PanelHint>
             <BilibiliImport initialUrl={initialBilibiliUrl} onProgress={setImportProgress} fetchTrigger={fetchTrigger} onImportHandlerChange={registerImportHandler} />
           </div>
         )}
         {activeTab === 'youtube' && (
           <div className="animate-fade-in">
-            <PanelHint>{t('app.hintYouTube')}</PanelHint>
             <YouTubeImport
               initialUrl={initialYouTubeUrl}
               onProgress={setImportProgress}
@@ -341,7 +347,6 @@ export default function App() {
         )}
         {activeTab === 'podcast' && (
           <div className="animate-fade-in">
-            <PanelHint>{t('app.hintPodcast')}</PanelHint>
             {/* No onImportHandlerChange: podcast audio can't be one-click
                 imported into Gemini Notebook (see PodcastImport.tsx) — this
                 panel is download-only, so the shared import button below
@@ -352,13 +357,11 @@ export default function App() {
         )}
         {activeTab === 'web' && (
           <div className="animate-fade-in">
-            <PanelHint>{t('app.hintWeb')}</PanelHint>
             <WebImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
           </div>
         )}
         {activeTab === 'claude' && (
           <div className="animate-fade-in">
-            <PanelHint>{t('app.hintAI')}</PanelHint>
             <AIchatImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} fetchTrigger={fetchTrigger} />
           </div>
         )}
@@ -368,10 +371,14 @@ export default function App() {
          Group 2: NotebookLM Settings — account, notebook list, import
          ════════════════════════════════════════════════════════ */}
       <div className="px-4 pt-4 pb-4 space-y-4">
-        {/* Notebook selector */}
-        <div data-tour="notebook-selector">
-          <NotebookSelector />
-        </div>
+        {/* Notebook selector — hidden on the podcast tab. Podcast is
+            download-only (see PodcastImport.tsx) and never targets a
+            notebook, so picking one here would have no effect on that tab. */}
+        {activeTab !== 'podcast' && (
+          <div data-tour="notebook-selector">
+            <NotebookSelector />
+          </div>
+        )}
 
         {/* Unified Import button — hidden on the podcast tab, which is
             download-only (see PodcastImport.tsx) and never registers an
@@ -388,6 +395,11 @@ export default function App() {
             {t('notebook.importToNlm')}
           </button>
         )}
+
+        {/* Per-source hint — anchored under the import action (not the empty
+            panel above it) so it reads as "here's what this button just did
+            / will do" rather than floating above an empty input. */}
+        <PanelHint>{activeTabHint}</PanelHint>
       </div>
 
       {/* First-time onboarding tour */}

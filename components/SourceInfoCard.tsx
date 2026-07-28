@@ -1,4 +1,4 @@
-import { Globe, MessageCircle, Tv2, Youtube, Headphones, type LucideIcon } from 'lucide-react';
+import { Globe, MessageCircle, Tv2, Youtube, Headphones, Download, Loader2, type LucideIcon } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 
 /** Platform identifier for color/icon theming */
@@ -21,11 +21,9 @@ interface SourceInfoCardProps {
   noContent?: boolean;
   /** Subtitle availability status — shows a warning at the subtitle line when unavailable */
   subtitleStatus?: 'available' | 'unavailable' | 'checking';
-  /** When true, renders tags inline in the subtitle row instead of on a separate line below */
-  inlineTags?: boolean;
   /** When true, shows a "页面连接已断开" warning inside the card with a refresh button */
   connectionLost?: boolean;
-  /** When provided and subtitle is available, shows a TXT download button at bottom-right */
+  /** When provided and subtitle is available, shows a TXT download button */
   onDownloadSubtitle?: () => void;
   /** Whether a subtitle download is currently in progress */
   subtitleDownloading?: boolean;
@@ -134,7 +132,6 @@ export function SourceInfoCard({
   onClick,
   noContent,
   subtitleStatus,
-  inlineTags,
   connectionLost,
   onDownloadSubtitle,
   subtitleDownloading,
@@ -144,7 +141,7 @@ export function SourceInfoCard({
   const Icon = styles.icon;
   const highResFavicon = upgradeFavicon(favicon, platform);
 
-  // Render a single tag badge (reused for both inline and standalone tags)
+  // Render a single tag badge
   const renderTagBadge = (tag: string, i?: number) => (
     <span
       key={i ?? 0}
@@ -190,17 +187,8 @@ export function SourceInfoCard({
     }
     if (subtitle) {
       return (
-        <p className={`text-xs ${styles.subtitleColor} mt-0.5 flex items-center gap-1.5 ${inlineTags ? '' : 'truncate'}`}>
-          {inlineTags ? (() => {
-            const parts = subtitle.split('|');
-            return (
-              <>
-                <span className="truncate">{parts[0]}</span>
-                {tags?.map((tag, i) => renderTagBadge(tag, i))}
-                {parts[1] && <span className="truncate">{parts[1]}</span>}
-              </>
-            );
-          })() : <span className="truncate">{subtitle}</span>}
+        <p className={`text-xs ${styles.subtitleColor} mt-0.5 truncate`}>
+          {subtitle}
         </p>
       );
     }
@@ -209,7 +197,7 @@ export function SourceInfoCard({
 
   return (
     <div
-      className={`${styles.bg} ${styles.border} border rounded-lg p-3 flex items-center gap-3 shadow-soft relative ${
+      className={`${styles.bg} ${styles.border} border rounded-lg p-3 flex items-center gap-3 shadow-soft ${
         onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''
       }`}
       onClick={onClick}
@@ -252,7 +240,7 @@ export function SourceInfoCard({
               {title || 'Untitled'}
             </p>
             {renderSubtitleLine()}
-            {!inlineTags && tags?.length ? (
+            {tags?.length ? (
               <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                 {tags.map((tag, i) => renderTagBadge(tag, i))}
               </div>
@@ -261,24 +249,23 @@ export function SourceInfoCard({
         )}
       </div>
 
-      {/* TXT Download Button — bottom-right, only for single Bilibili videos with subtitles */}
+      {/* TXT download — a normal flex sibling next to the icon/content, not an
+          absolutely-positioned overlay. Overlaying the bottom-right corner
+          could sit on top of the tags row above, and floated oddly when the
+          card had only one line of text; as a flex child it just sits
+          vertically centered at the row's end, like the platform icon on
+          the other side. */}
       {onDownloadSubtitle && subtitleStatus !== 'unavailable' && subtitleStatus !== 'checking' && (
         <button
           onClick={(e) => { e.stopPropagation(); onDownloadSubtitle(); }}
           disabled={subtitleDownloading}
-          className="absolute bottom-1.5 right-1.5 px-2 py-1 text-[11px] rounded-md border border-gray-300 bg-white/80 text-gray-500 hover:bg-white hover:text-gray-700 hover:border-gray-400 transition-all duration-150 btn-press disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+          title={t('downloadTxt')}
+          className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg border ${styles.border} bg-white/70 ${styles.subtitleColor} hover:bg-white hover:shadow-soft transition-all duration-150 btn-press disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {subtitleDownloading ? (
-            <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
+            <Download className="w-3.5 h-3.5" />
           )}
           {t('downloadTxt')}
         </button>
