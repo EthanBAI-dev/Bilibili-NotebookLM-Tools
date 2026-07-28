@@ -107,10 +107,33 @@ async function broadcastToSidepanel(msg: Record<string, unknown>): Promise<void>
   }
 }
 
+// ── Podcast download filenames vs. CDN Content-Disposition ──
+// chrome.downloads.download()'s `filename` option is only a *suggestion* —
+// if the server response carries a Content-Disposition header (some podcast
+// CDNs, e.g. Xiaoyuzhou's, send one with an opaque episode ID), Chrome uses
+// that instead and the friendly "001 - Episode Title.m4a" name we built is
+// silently discarded in favor of something like "llTHecJWF138Bet2g0Rc65S8HIxG.m4a".
+// onDeterminingFilename fires after headers are read but before the name is
+// finalized, and a suggestion made there wins over Content-Disposition — so
+// we record the filename we want per URL right before starting each podcast
+// download, and force it here. Downloads not in this map (i.e. everything
+// that isn't a podcast episode) fall through untouched.
+const pendingPodcastFilenames = new Map<string, string>();
+
 export default defineBackground(() => {
   console.log('NoteFlow background service started');
 
   void refreshContextMenus();
+
+  // Force our friendly filename for podcast downloads — see
+  // pendingPodcastFilenames above. Anything not in the map (every other
+  // download this extension or the browser makes) is left completely alone.
+  chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+    const forced = pendingPodcastFilenames.get(downloadItem.url);
+    if (!forced) return;
+    pendingPodcastFilenames.delete(downloadItem.url);
+    suggest({ filename: forced, conflictAction: 'uniquify' });
+  });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
@@ -261,6 +284,7 @@ export default defineBackground(() => {
             sendProgress({ phase: 'downloading', current: i + 1, total: episodes.length, title: ep.title });
             console.log(`[podcast] ${i + 1}/${episodes.length}: ${ep.title}`);
 
+            pendingPodcastFilenames.set(ep.audioUrl, filename);
             await new Promise<void>((resolve, reject) => {
               chrome.downloads.download(
                 { url: ep.audioUrl, filename, conflictAction: 'uniquify' },
