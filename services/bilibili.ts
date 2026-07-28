@@ -10,6 +10,7 @@
  */
 
 import type { BilibiliVideoItem } from '@/lib/types';
+import { encodeWbi } from '@/services/bilibili-wbi';
 export type { BilibiliVideoItem };
 
 export interface BilibiliSourceInfo {
@@ -376,8 +377,10 @@ export async function fetchBilibiliCollection(mid: string, sid: string): Promise
   let hasMore = true;
 
   while (hasMore && allVideos.length < 500) {
+    // seasons_archives_list rejects unsigned requests — see services/bilibili-wbi.ts.
+    const query = await encodeWbi({ mid, season_id: sid, page_num: pageNum, page_size: ps });
     const data = await apiFetch(
-      `https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid=${mid}&season_id=${sid}&page_num=${pageNum}&page_size=${ps}`
+      `https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?${query}`
     ) as any;
 
     if (!title) {
