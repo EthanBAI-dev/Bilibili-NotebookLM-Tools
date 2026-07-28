@@ -323,12 +323,13 @@ export default function App() {
         </div>
         {activeTab === 'bilibili' && (
           <div className="animate-fade-in">
-            <BilibiliImport initialUrl={initialBilibiliUrl} onProgress={setImportProgress} fetchTrigger={fetchTrigger} onImportHandlerChange={registerImportHandler} />
             <PanelHint>{t('app.hintBilibili')}</PanelHint>
+            <BilibiliImport initialUrl={initialBilibiliUrl} onProgress={setImportProgress} fetchTrigger={fetchTrigger} onImportHandlerChange={registerImportHandler} />
           </div>
         )}
         {activeTab === 'youtube' && (
           <div className="animate-fade-in">
+            <PanelHint>{t('app.hintYouTube')}</PanelHint>
             <YouTubeImport
               initialUrl={initialYouTubeUrl}
               onProgress={setImportProgress}
@@ -336,30 +337,29 @@ export default function App() {
               onImportHandlerChange={registerImportHandler}
               prefetchedResult={prefetchedYouTubeResult}
             />
-            <PanelHint>{t('app.hintYouTube')}</PanelHint>
           </div>
         )}
         {activeTab === 'podcast' && (
           <div className="animate-fade-in">
+            <PanelHint>{t('app.hintPodcast')}</PanelHint>
             {/* No onImportHandlerChange: podcast audio can't be one-click
                 imported into Gemini Notebook (see PodcastImport.tsx) — this
                 panel is download-only, so the shared import button below
                 just stays disabled here, same as any panel with nothing
                 selected yet. */}
             <PodcastImport initialUrl={initialPodcastUrl} fetchTrigger={fetchTrigger} onProgress={setImportProgress} />
-            <PanelHint>{t('app.hintPodcast')}</PanelHint>
           </div>
         )}
         {activeTab === 'web' && (
           <div className="animate-fade-in">
-            <WebImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
             <PanelHint>{t('app.hintWeb')}</PanelHint>
+            <WebImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
           </div>
         )}
         {activeTab === 'claude' && (
           <div className="animate-fade-in">
-            <AIchatImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} fetchTrigger={fetchTrigger} />
             <PanelHint>{t('app.hintAI')}</PanelHint>
+            <AIchatImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} fetchTrigger={fetchTrigger} />
           </div>
         )}
       </div>
