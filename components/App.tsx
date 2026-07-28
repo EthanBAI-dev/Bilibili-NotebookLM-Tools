@@ -17,6 +17,7 @@ import { RescueBanner } from '@/components/RescueBanner';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { PanelHint } from '@/components/PanelHint';
+import { RateUsBar } from '@/components/RateUsBar';
 
 export default function App() {
   const { t, locale, setLocale } = useI18n();
@@ -401,6 +402,10 @@ export default function App() {
             / will do" rather than floating above an empty input. */}
         <PanelHint>{activeTabHint}</PanelHint>
       </div>
+
+      {/* Rate-us CTA — bottom of the panel, shown on every tab until
+          dismissed once (see RateUsBar's own storage-backed dismiss). */}
+      <RateUsBar />
 
       {/* First-time onboarding tour */}
       <OnboardingTour forceShow={forceShowTour} onComplete={() => setForceShowTour(false)} />
