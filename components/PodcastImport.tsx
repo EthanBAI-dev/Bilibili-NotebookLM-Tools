@@ -5,7 +5,7 @@ import type { PodcastInfo, PodcastEpisode } from '@/services/podcast';
 import { t } from '@/lib/i18n';
 import { SourceInfoCard, SourceInfoCardSkeleton } from './SourceInfoCard';
 
-type State = 'idle' | 'loading' | 'loaded' | 'downloading' | 'importing' | 'done' | 'error';
+type State = 'idle' | 'loading' | 'loaded' | 'downloading' | 'done' | 'error';
 type Platform = 'unknown' | 'apple' | 'xiaoyuzhou';
 
 function detectPlatform(url: string): Platform {
@@ -28,14 +28,21 @@ function getPlatformConfig(platform: string) {
   return { name: platformNames[platform] || t('app.tabPodcast'), ...styles };
 }
 
+// No import handler / onImportHandlerChange: podcast audio cannot be
+// one-click imported into Gemini Notebook — the CDNs episode audio is
+// hosted on frequently reject fetch()-style requests outright (verified
+// live against a real Megaphone/Podscribe-routed feed via curl, Node, and
+// real Chrome, including no-cors mode, which bypasses CORS checks entirely —
+// this is a connection-level block, not a permissions gap with a code fix).
+// This panel is download-only; the user drags the file into Gemini Notebook
+// themselves, matching what docs-site has always described.
 interface Props {
   initialUrl?: string;
   fetchTrigger?: number;
   onProgress?: (progress: ImportProgress | null) => void;
-  onImportHandlerChange?: (handler: (() => void) | null) => void;
 }
 
-export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHandlerChange }: Props) {
+export function PodcastImport({ initialUrl, fetchTrigger, onProgress }: Props) {
   const [url, setUrl] = useState(initialUrl || '');
   const [count, setCount] = useState<number | undefined>(undefined);
   const [state, setState] = useState<State>('idle');
@@ -54,7 +61,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHa
   // the effects don't depend on `state`, so a state-based check there would
   // close over a stale value instead of the current one.
   const isLockedRef = useRef(false);
-  isLockedRef.current = state === 'downloading' || state === 'importing';
+  isLockedRef.current = state === 'downloading';
 
   // Auto-fetch when initialUrl changes (tab switch / page nav)
   const lastAutoUrl = useRef<string | null>(null);
@@ -180,72 +187,6 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHa
     });
   };
 
-  // ── Import selected episodes' shownotes into NotebookLM (text, not audio) ──
-  // Drives the shared onProgress/ImportItem protocol the same way
-  // BilibiliImport/YouTubeImport/WebImport do, so the App-level progress bar
-  // and success/failure summary banner work here without any extra UI. Kept
-  // out of `state === 'error'` on failure deliberately: that branch renders
-  // a "no media content" SourceInfoCard for recognized platforms, which
-  // would misreport an import failure as "couldn't find audio/video".
-  const handleImport = async () => {
-    if (isLockedRef.current || !podcast) return;
-    const toImport = episodes.filter((e) => selected.has(e.id));
-    if (toImport.length === 0) return;
-
-    setState('importing');
-    const itemStatuses: ImportItem[] = toImport.map((ep) => ({ url: ep.title, status: 'pending' }));
-    onProgress?.({
-      total: toImport.length,
-      completed: 0,
-      current: { ...itemStatuses[0], status: 'importing' },
-      items: itemStatuses,
-    });
-
-    try {
-      for (let i = 0; i < toImport.length; i++) {
-        itemStatuses[i] = { ...itemStatuses[i], status: 'importing' };
-        onProgress?.({
-          total: toImport.length,
-          completed: i,
-          current: itemStatuses[i],
-          items: itemStatuses,
-        });
-
-        let success = false;
-        try {
-          const resp: any = await chrome.runtime.sendMessage({
-            type: 'IMPORT_PODCAST_EPISODE',
-            podcast,
-            episode: toImport[i],
-          });
-          success = !!resp?.success;
-        } catch {
-          success = false;
-        }
-        itemStatuses[i] = { ...itemStatuses[i], status: success ? 'success' : 'error' };
-
-        onProgress?.({
-          total: toImport.length,
-          completed: i + 1,
-          current: i + 1 < toImport.length ? { ...itemStatuses[i + 1], status: 'importing' } : undefined,
-          items: itemStatuses,
-        });
-      }
-
-      await new Promise((r) => setTimeout(r, 300));
-      onProgress?.(null);
-    } finally {
-      setState('loaded');
-    }
-  };
-
-  // Register import handler for the shared App-level "导入 NotebookLM" button
-  useEffect(() => {
-    onImportHandlerChange?.(selected.size > 0 ? handleImport : null);
-    return () => onImportHandlerChange?.(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onImportHandlerChange, handleImport, selected.size]);
-
   const toggleEpisode = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -322,7 +263,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHa
       {episodes.length > 0 && (
         <button
           onClick={handleDownload}
-          disabled={selected.size === 0 || state === 'downloading' || state === 'importing'}
+          disabled={selected.size === 0 || state === 'downloading'}
           className={`w-full py-2.5 ${theme.accent} text-white text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-btn hover:shadow-btn-hover transition-all duration-150 btn-press`}
         >
           {state === 'downloading' ? (

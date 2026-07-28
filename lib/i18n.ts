@@ -51,7 +51,7 @@ const zh = {
   'app.switchToChinese': '切换到中文',
   'app.hintBilibili': '支持单个视频、分 P、合集、收藏夹与 UP 主投稿。可逐个或合并导入，输出 TXT / MD / JSON / SRT。',
   'app.hintYouTube': '支持单个视频、播放列表与频道批量导入，长列表可分页加载。',
-  'app.hintPodcast': '支持 Apple Podcasts 与小宇宙 FM，自动识别当前单集，下载音频后导入。',
+  'app.hintPodcast': '支持 Apple Podcasts 与小宇宙 FM，自动识别当前单集或整档节目，可单集下载或打包下载。暂不支持一键导入 Gemini Notebook，下载后请手动拖入。',
   'app.hintWeb': '导入当前标签页或所有打开的标签页，已有专用工具的平台会自动排除。',
   'app.hintAI': '支持 Claude、ChatGPT 与 Gemini，自动提取问答对，可只选需要的部分导入。',
 
@@ -478,7 +478,7 @@ const en: Record<keyof typeof zh, string> = {
   'app.switchToChinese': 'Switch to Chinese',
   'app.hintBilibili': 'Works with single videos, multi-part videos, collections, favourites and uploader pages. Import one by one or merged, as TXT / MD / JSON / SRT.',
   'app.hintYouTube': 'Works with single videos, playlists and channels. Long lists load page by page.',
-  'app.hintPodcast': 'Works with Apple Podcasts and Xiaoyuzhou FM. Detects the current episode and downloads its audio before importing.',
+  'app.hintPodcast': 'Works with Apple Podcasts and Xiaoyuzhou FM. Detects the current episode or show — download one episode or the whole batch. One-click import to Gemini Notebook isn\'t supported yet; drag the downloaded file in manually.',
   'app.hintWeb': 'Imports the current tab or every open tab. Platforms with a dedicated importer are skipped automatically.',
   'app.hintAI': 'Works with Claude, ChatGPT and Gemini. Extracts Q&A pairs so you can import only the parts you need.',
 

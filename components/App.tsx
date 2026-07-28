@@ -341,7 +341,12 @@ export default function App() {
         )}
         {activeTab === 'podcast' && (
           <div className="animate-fade-in">
-            <PodcastImport initialUrl={initialPodcastUrl} fetchTrigger={fetchTrigger} onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
+            {/* No onImportHandlerChange: podcast audio can't be one-click
+                imported into Gemini Notebook (see PodcastImport.tsx) — this
+                panel is download-only, so the shared import button below
+                just stays disabled here, same as any panel with nothing
+                selected yet. */}
+            <PodcastImport initialUrl={initialPodcastUrl} fetchTrigger={fetchTrigger} onProgress={setImportProgress} />
             <PanelHint>{t('app.hintPodcast')}</PanelHint>
           </div>
         )}
