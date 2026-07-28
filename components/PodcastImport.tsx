@@ -289,7 +289,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHa
                 {t('podcast.selectedEpisodes', { selected: selected.size, total: episodes.length })}
               </span>
               <div className="flex gap-2 text-xs">
-                <button onClick={selectAll} className="text-[#00a1d6] hover:underline">{t('selectAll')}</button>
+                <button onClick={selectAll} className="text-notebooklm-blue hover:underline">{t('selectAll')}</button>
                 <button onClick={selectNone} className="text-gray-400 hover:underline">{t('deselectAll')}</button>
               </div>
             </div>
@@ -303,7 +303,7 @@ export function PodcastImport({ initialUrl, fetchTrigger, onProgress, onImportHa
                   type="checkbox"
                   checked={selected.has(ep.id)}
                   onChange={() => toggleEpisode(ep.id)}
-                  className="mt-1 rounded border-gray-300 text-[#00a1d6] focus:ring-[#00a1d6]"
+                  className="mt-1 rounded border-gray-300 text-notebooklm-blue focus:ring-notebooklm-blue"
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-700 line-clamp-1">{ep.title}</p>
