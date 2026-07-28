@@ -125,16 +125,6 @@ export default defineBackground(() => {
 
   void refreshContextMenus();
 
-  // Force our friendly filename for podcast downloads — see
-  // pendingPodcastFilenames above. Anything not in the map (every other
-  // download this extension or the browser makes) is left completely alone.
-  chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-    const forced = pendingPodcastFilenames.get(downloadItem.url);
-    if (!forced) return;
-    pendingPodcastFilenames.delete(downloadItem.url);
-    suggest({ filename: forced, conflictAction: 'uniquify' });
-  });
-
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
     if (!changes.noteflow_locale && !changes.flow2note_locale) return;
@@ -416,6 +406,29 @@ export default defineBackground(() => {
       return true;
     }
   );
+
+  // ── Peripheral listeners — registered LAST, and individually guarded ──
+  // Everything above this point is core functionality (message handling for
+  // every import path, notebook list, rescue, …). A throw anywhere in this
+  // callback aborts the rest of it, so anything optional has to come after
+  // the core registrations and must not be able to take them down with it —
+  // the onMessageExternal guard at the top of this file exists for the same
+  // reason (that API is missing under WXT's fake-browser).
+  try {
+    // Force our friendly filename for podcast downloads — see
+    // pendingPodcastFilenames above. Anything not in the map (every other
+    // download this extension or the browser makes) is left untouched.
+    chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+      const forced = pendingPodcastFilenames.get(downloadItem.url);
+      if (!forced) return;
+      pendingPodcastFilenames.delete(downloadItem.url);
+      suggest({ filename: forced, conflictAction: 'uniquify' });
+    });
+  } catch (err) {
+    // Podcast downloads still work, they just fall back to whatever name the
+    // CDN's Content-Disposition dictates.
+    console.warn('[background] downloads.onDeterminingFilename unavailable:', err);
+  }
 });
 
 // ── Rescue failed sources ──
