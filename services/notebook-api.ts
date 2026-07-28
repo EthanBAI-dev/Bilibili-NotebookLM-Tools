@@ -64,24 +64,32 @@ async function fetchTokens(authuser?: number): Promise<NlmTokens | null> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+    // `redirect: 'follow'`, deliberately. This used to be 'manual' with a
+    // comment about "allowing opaque redirects through (still try to read
+    // body)" — but per spec an opaqueredirect response's body is ALWAYS empty
+    // and unreadable, so that path could only ever fall into the
+    // "empty/short response" bail-out below. 'manual' therefore bought
+    // nothing and guaranteed failure the moment Google served a redirect
+    // (rebrand hop, account chooser, consent interstitial, …). Following the
+    // redirect lands us on the page that actually carries the tokens, and
+    // when it lands somewhere useless instead (a sign-in page) the HTML
+    // preview logged below finally shows what happened.
     const resp = await fetch(url, {
       credentials: 'include',
-      redirect: 'manual',
+      redirect: 'follow',
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
-    // Reference logic: allow opaque redirects through (still try to read body)
-    if (!resp.ok && resp.type !== 'opaqueredirect') {
-      console.warn(`[notebook-api] Token fetch: HTTP ${resp.status} type=${resp.type}`);
+    if (!resp.ok) {
+      console.warn(`[notebook-api] Token fetch: HTTP ${resp.status} type=${resp.type} finalUrl=${resp.url}`);
       return null;
     }
 
     const html = await resp.text();
 
-    // If the response was a redirect, html will be empty — detect quickly
     if (!html || html.length < 100) {
-      console.warn(`[notebook-api] Token fetch: empty/short response (${html.length} chars) — possible redirect`);
+      console.warn(`[notebook-api] Token fetch: empty/short response (${html.length} chars) finalUrl=${resp.url}`);
       return null;
     }
 
@@ -94,7 +102,10 @@ async function fetchTokens(authuser?: number): Promise<NlmTokens | null> {
 
     if (!at || !bl) {
       console.warn(`[notebook-api] Tokens: at=${!!at} bl=${!!bl} (authuser=${authuser})`);
-      // Log first 500 chars of HTML for debugging
+      // finalUrl is the single most useful clue here: if it's an
+      // accounts.google.com URL the session/authuser is the problem, if it's
+      // some other Google host the app has moved and NLM_HOME_URL is stale.
+      console.warn(`[notebook-api] Token fetch landed on: ${resp.url}`);
       console.warn(`[notebook-api] HTML preview: ${html.slice(0, 500)}`);
       return null;
     }
