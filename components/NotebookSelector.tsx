@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, Search, Pencil, RefreshCw } from 'lucide-react';
 import type { NotebookInfo } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
-import { setSelectedNotebook, getSelectedNotebook } from '@/lib/config';
+import { setSelectedNotebook, getSelectedNotebook, NOTEBOOKLM_HOSTS, NOTEBOOKLM_MATCH_PATTERNS } from '@/lib/config';
 
 interface NotebookData {
   current: NotebookInfo | null;
@@ -42,7 +42,7 @@ export function NotebookSelector() {
         if (target) {
           const enriched: NotebookInfo = {
             ...target,
-            url: target.url || `https://notebooklm.google.com/notebook/${target.id}`,
+            url: target.url || `${NOTEBOOKLM_HOSTS.current}/notebook/${target.id}`,
           };
           await setSelectedNotebook(enriched);
         }
@@ -107,7 +107,7 @@ export function NotebookSelector() {
   const handleSelect = async (nb: NotebookInfo) => {
     const enriched: NotebookInfo = {
       ...nb,
-      url: nb.url || `https://notebooklm.google.com/notebook/${nb.id}`,
+      url: nb.url || `${NOTEBOOKLM_HOSTS.current}/notebook/${nb.id}`,
     };
     setSelectedId(nb.id);
     await setSelectedNotebook(enriched);
@@ -119,8 +119,8 @@ export function NotebookSelector() {
     e.stopPropagation();
     const nb = selectedNotebook;
     if (!nb) return;
-    const url = nb.url || `https://notebooklm.google.com/notebook/${nb.id}`;
-    chrome.tabs.query({ url: 'https://notebooklm.google.com/*' }, (tabs) => {
+    const url = nb.url || `${NOTEBOOKLM_HOSTS.current}/notebook/${nb.id}`;
+    chrome.tabs.query({ url: [...NOTEBOOKLM_MATCH_PATTERNS] }, (tabs) => {
       if (tabs.length > 0 && tabs[0].id) {
         chrome.tabs.update(tabs[0].id, { url, active: true });
       } else {
@@ -143,7 +143,7 @@ export function NotebookSelector() {
   };
 
   const handleCreateNotebook = () => {
-    chrome.tabs.create({ url: 'https://notebooklm.google.com' });
+    chrome.tabs.create({ url: NOTEBOOKLM_HOSTS.current });
     setIsOpen(false);
   };
 

@@ -3,9 +3,10 @@
 // Multi-account support via ?authuser=X parameter (from add_to_NotebookLM)
 
 import { getCurrentAuthuser } from '@/services/account-slots';
+import { NOTEBOOKLM_HOSTS } from '@/lib/config';
 
-const BATCHEXECUTE_URL = 'https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute';
-const NLM_HOME_URL = 'https://notebooklm.google.com/';
+const BATCHEXECUTE_URL = `${NOTEBOOKLM_HOSTS.current}/_/LabsTailwindUi/data/batchexecute`;
+const NLM_HOME_URL = `${NOTEBOOKLM_HOSTS.current}/`;
 
 const RPC_LIST_NOTEBOOKS = 'wXbhsf';
 const RPC_ADD_SOURCE = 'izAoDd';
@@ -411,7 +412,7 @@ function parseNotebookList(rawText: string): NotebookItem[] {
         notebooks.push({
           id,
           title,
-          url: `https://notebooklm.google.com/notebook/${id}`,
+          url: `${NOTEBOOKLM_HOSTS.current}/notebook/${id}`,
         });
       }
     }
@@ -556,7 +557,7 @@ export async function createNotebook(title: string): Promise<NotebookItem> {
             const id = typeof nb[0] === 'string' ? nb[0] : '';
             const nbTitle = typeof nb[1] === 'string' ? nb[1] : title;
             if (id) {
-              return { id, title: nbTitle, url: `https://notebooklm.google.com/notebook/${id}` };
+              return { id, title: nbTitle, url: `${NOTEBOOKLM_HOSTS.current}/notebook/${id}` };
             }
           }
         }

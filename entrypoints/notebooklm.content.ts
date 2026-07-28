@@ -3,8 +3,10 @@
 
 import { getSettings } from '@/lib/settings';
 
+import { NOTEBOOKLM_HOSTS } from '@/lib/config';
+
 export default defineContentScript({
-  matches: ['https://notebooklm.google.com/*'],
+  matches: ['https://notebook.google.com/*', 'https://notebooklm.google.com/*'],
   runAt: 'document_idle',
 
   main() {
@@ -1772,7 +1774,7 @@ interface NotebookInfo {
  * Works on both the notebook page (single notebook) and the home page (list).
  */
 function getNotebookInfo(): { current: NotebookInfo | null; list: NotebookInfo[] } {
-  const baseUrl = 'https://notebooklm.google.com';
+  const baseUrl = NOTEBOOKLM_HOSTS.current;
   const currentUrl = window.location.href;
   let current: NotebookInfo | null = null;
 
