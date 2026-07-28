@@ -49,6 +49,11 @@ const zh = {
   'app.currentSite': '当前网站',
   'app.switchToEnglish': '切换到英文',
   'app.switchToChinese': '切换到中文',
+  'app.hintBilibili': '支持单个视频、分 P、合集、收藏夹与 UP 主投稿。可逐个或合并导入，输出 TXT / MD / JSON / SRT。',
+  'app.hintYouTube': '支持单个视频、播放列表与频道批量导入，长列表可分页加载。',
+  'app.hintPodcast': '支持 Apple Podcasts 与小宇宙 FM，自动识别当前单集，下载音频后导入。',
+  'app.hintWeb': '导入当前标签页或所有打开的标签页，已有专用工具的平台会自动排除。',
+  'app.hintAI': '支持 Claude、ChatGPT 与 Gemini，自动提取问答对，可只选需要的部分导入。',
 
   // ── Notebook Selector ──
   'notebook.openInTab': '在标签页中打开',
@@ -471,6 +476,11 @@ const en: Record<keyof typeof zh, string> = {
   'app.currentSite': 'Current Site',
   'app.switchToEnglish': 'Switch to English',
   'app.switchToChinese': 'Switch to Chinese',
+  'app.hintBilibili': 'Works with single videos, multi-part videos, collections, favourites and uploader pages. Import one by one or merged, as TXT / MD / JSON / SRT.',
+  'app.hintYouTube': 'Works with single videos, playlists and channels. Long lists load page by page.',
+  'app.hintPodcast': 'Works with Apple Podcasts and Xiaoyuzhou FM. Detects the current episode and downloads its audio before importing.',
+  'app.hintWeb': 'Imports the current tab or every open tab. Platforms with a dedicated importer are skipped automatically.',
+  'app.hintAI': 'Works with Claude, ChatGPT and Gemini. Extracts Q&A pairs so you can import only the parts you need.',
 
   // ── Notebook Selector ──
   'notebook.openInTab': 'Open in tab',

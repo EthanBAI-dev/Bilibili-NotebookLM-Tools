@@ -10,6 +10,7 @@
  */
 
 import type { BilibiliVideoItem } from '@/lib/types';
+import { encodeWbi } from '@/services/bilibili-wbi';
 export type { BilibiliVideoItem };
 
 export interface BilibiliSourceInfo {
@@ -34,70 +35,143 @@ export interface BilibiliSubtitleBody {
 }
 
 // ── URL Parsing ──
+//
+// `detectBilibiliPage` is the single source of truth; every predicate and
+// parser below is derived from it. Keeping one classifier matters because the
+// patterns here overlap heavily — a 合集 and a 收藏夹 both live *inside* an
+// UP主 space — and duplicated copies of these rules have drifted twice before,
+// once dropping /medialist/play/ml{id} and once reading 合集 links as plain
+// UP主 pages.
+
+/** What kind of video source a Bilibili URL points at. */
+export type BilibiliPage =
+  /** Single video, or one part (分P) of a multi-part video. */
+  | { kind: 'video'; bvid: string; page: number }
+  /** UP主 homepage — their full upload list. */
+  | { kind: 'space'; mid: string }
+  /** 合集/系列 — a curated season within an UP主's space. */
+  | { kind: 'collection'; mid: string; sid: string }
+  /** 收藏夹 / 媒体列表 / 稍后再看. */
+  | { kind: 'favorite'; favType: 'watchlater' | 'fav' | 'ml'; id: string | null };
+
+const isBiliHost = (hostname: string) => /(^|\.)bilibili\.com$/i.test(hostname);
+const isSpaceHost = (hostname: string) => /^space\.bilibili\.com$/i.test(hostname);
+
+function toUrl(url: string): URL | null {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Classify a Bilibili URL.
+ *
+ * Patterns are ordered most-specific first, and that order is load-bearing:
+ * 合集 (`/{mid}/lists/{sid}`) and 收藏夹 (`/{mid}/favlist?fid=`) are both
+ * sub-paths of an UP主 space, so matching the bare space pattern first would
+ * classify them as 'space' and silently fetch the uploader's entire upload
+ * list instead of the list the user is actually looking at.
+ *
+ * Returns null for Bilibili pages that aren't a video source (动态, 专栏,
+ * 直播, 搜索…) so callers can tell "not supported" from "wrong parse".
+ */
+export function detectBilibiliPage(url: string): BilibiliPage | null {
+  const u = toUrl(url);
+  if (!u || !isBiliHost(u.hostname)) return null;
+  const path = u.pathname;
+
+  // 稍后再看
+  if (/^\/list\/watchlater\/?$/i.test(path)) {
+    return { kind: 'favorite', favType: 'watchlater', id: null };
+  }
+
+  // 合集/系列: space.bilibili.com/{mid}/lists/{sid}?type=season|series
+  const collection = path.match(/^\/(\d+)\/lists\/(\d+)\/?$/);
+  if (isSpaceHost(u.hostname) && collection) {
+    return { kind: 'collection', mid: collection[1], sid: collection[2] };
+  }
+
+  // 收藏夹 as actually browsed on the web: space.bilibili.com/{mid}/favlist?fid={id}
+  // (and the www.bilibili.com/favlist?fid={id} variant). `fid` is the media_id.
+  if (/^\/(?:\d+\/)?favlist\/?$/i.test(path)) {
+    const fid = u.searchParams.get('fid')?.trim();
+    if (fid && /^\d+$/.test(fid)) return { kind: 'favorite', favType: 'fav', id: fid };
+  }
+
+  // 收藏夹/媒体列表 in playback form
+  const medialist = path.match(/^\/medialist\/(?:detail|play)\/ml(\d+)\/?$/i);
+  if (medialist) return { kind: 'favorite', favType: 'ml', id: medialist[1] };
+
+  // /list/fav/{id}, /list/ml/{id}, /list/ml{id}, /list/{id}
+  const listMatch = path.match(/^\/list\/(fav|ml)?\/?(?:ml)?(\d+)\/?$/i);
+  if (listMatch) {
+    const favType = listMatch[1]?.toLowerCase() === 'fav' ? 'fav' : 'ml';
+    return { kind: 'favorite', favType, id: listMatch[2] };
+  }
+
+  // 单个视频 / 分P
+  const video = path.match(/^\/video\/(BV[a-zA-Z0-9]+|av\d+)\/?$/i);
+  if (video) {
+    const parsedPage = parseInt(u.searchParams.get('p') || '1', 10);
+    return {
+      kind: 'video',
+      bvid: video[1],
+      page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
+    };
+  }
+
+  // UP主主页 — only the space root and its 投稿 tab. Everything else under the
+  // space (/dynamic, /article, /favlist without fid, /lists index…) has no
+  // video list to extract, so it must not fall through to a space fetch.
+  if (isSpaceHost(u.hostname)) {
+    const segments = path.split('/').filter(Boolean);
+    const mid = segments[0] || '';
+    const isSpaceRoot = segments.length === 1;
+    const isUploadTab = segments.length === 2 && /^(video|upload)$/i.test(segments[1]);
+    if (/^\d+$/.test(mid) && (isSpaceRoot || isUploadTab)) {
+      return { kind: 'space', mid };
+    }
+  }
+
+  return null;
+}
 
 export function isBilibiliUrl(url: string): boolean {
-  return /bilibili\.com\/video\//.test(url);
+  return detectBilibiliPage(url)?.kind === 'video';
 }
 
 export function parseBilibiliUrl(url: string): { bvid: string; page: number } | null {
-  try {
-    const urlObj = new URL(url);
-    const pathMatch = urlObj.pathname.match(/\/video\/(BV[a-zA-Z0-9]+|av\d+)/i);
-    if (!pathMatch) return null;
-    const bvid = pathMatch[1];
-    const page = parseInt(urlObj.searchParams.get('p') || '1', 10);
-    return { bvid, page };
-  } catch {
-    return null;
-  }
+  const page = detectBilibiliPage(url);
+  return page?.kind === 'video' ? { bvid: page.bvid, page: page.page } : null;
 }
 
 export function isBilibiliSpaceUrl(url: string): boolean {
-  return /space\.bilibili\.com\/\d+/.test(url);
+  return detectBilibiliPage(url)?.kind === 'space';
 }
 
 export function parseBilibiliSpaceUrl(url: string): string | null {
-  try {
-    const urlObj = new URL(url);
-    const match = urlObj.pathname.match(/\/(\d+)/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
+  const page = detectBilibiliPage(url);
+  return page?.kind === 'space' ? page.mid : null;
 }
 
-// ── Favorite / Collection List Parsing ──
+export function isBilibiliCollectionUrl(url: string): boolean {
+  return detectBilibiliPage(url)?.kind === 'collection';
+}
+
+export function parseBilibiliCollectionUrl(url: string): { mid: string; sid: string } | null {
+  const page = detectBilibiliPage(url);
+  return page?.kind === 'collection' ? { mid: page.mid, sid: page.sid } : null;
+}
 
 export function isBilibiliFavUrl(url: string): boolean {
-  return /bilibili\.com\/(list\/(watchlater|fav|ml)|medialist\/play\/ml)/.test(url);
+  return detectBilibiliPage(url)?.kind === 'favorite';
 }
 
 export function parseBilibiliFavUrl(url: string): { type: 'watchlater' | 'fav' | 'ml'; id: string | null } | null {
-  try {
-    const urlObj = new URL(url);
-    const path = urlObj.pathname;
-
-    // /list/watchlater
-    if (/\/list\/watchlater/.test(path)) {
-      return { type: 'watchlater', id: null };
-    }
-
-    // /list/fav/{id} or /list/ml/{id}
-    const favMatch = path.match(/\/list\/(fav|ml)\/(\d+)/);
-    if (favMatch) {
-      return { type: favMatch[1] as 'fav' | 'ml', id: favMatch[2] };
-    }
-
-    // /medialist/play/ml{id}
-    const mlPlayMatch = path.match(/\/medialist\/play\/ml(\d+)/);
-    if (mlPlayMatch) {
-      return { type: 'ml', id: mlPlayMatch[1] };
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
+  const page = detectBilibiliPage(url);
+  return page?.kind === 'favorite' ? { type: page.favType, id: page.id } : null;
 }
 
 // ── API Helpers ──
@@ -277,6 +351,65 @@ export async function fetchBilibiliUserVideos(mid: string): Promise<BilibiliSpac
     source: {
       bvid: mid,
       title,
+      owner,
+      desc: '',
+      videoCount: allVideos.length,
+      isSeries: true,
+      type: 'series',
+    },
+    videos: allVideos,
+  };
+}
+
+// ── Fetch 合集/系列 (Collection) Videos ──
+
+export interface BilibiliCollectionResult {
+  source: BilibiliSourceInfo;
+  videos: BilibiliVideoItem[];
+}
+
+export async function fetchBilibiliCollection(mid: string, sid: string): Promise<BilibiliCollectionResult> {
+  const allVideos: BilibiliVideoItem[] = [];
+  const ps = 30;
+  let pageNum = 1;
+  let title = '';
+  let owner = '';
+  let hasMore = true;
+
+  while (hasMore && allVideos.length < 500) {
+    // seasons_archives_list rejects unsigned requests — see services/bilibili-wbi.ts.
+    const query = await encodeWbi({ mid, season_id: sid, page_num: pageNum, page_size: ps });
+    const data = await apiFetch(
+      `https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?${query}`
+    ) as any;
+
+    if (!title) {
+      title = data?.meta?.name || '';
+      owner = data?.meta?.upper?.name || '';
+    }
+
+    const archives: any[] = data?.archives || [];
+    for (const a of archives) {
+      allVideos.push({
+        bvid: a.bvid,
+        cid: 0, // Resolved later during subtitle fetch
+        aid: a.aid,
+        title: a.title || '',
+        page: allVideos.length + 1,
+        url: `https://www.bilibili.com/video/${a.bvid}`,
+        duration: a.duration,
+      });
+    }
+
+    const total: number = data?.page?.total ?? 0;
+    hasMore = archives.length > 0 && allVideos.length < total;
+    pageNum++;
+  }
+
+  return {
+    source: {
+      bvid: sid,
+      title: title || '合集',
       owner,
       desc: '',
       videoCount: allVideos.length,

@@ -66,6 +66,7 @@ export type MessageType =
   | { type: 'DETECT_YOUTUBE_SUBTITLES'; tabId: number }
   | { type: 'FETCH_BILIBILI'; url: string }
   | { type: 'FETCH_BILIBILI_SPACE'; mid: string }
+  | { type: 'FETCH_BILIBILI_COLLECTION'; mid: string; sid: string }
   | { type: 'DOWNLOAD_BILIBILI_SUBTITLES'; videos: BilibiliVideoItem[]; ownerName: string; desc: string }
   | { type: 'DOWNLOAD_BILIBILI_ZIP'; videos: BilibiliVideoItem[]; ownerName: string; desc: string }
   | { type: 'DOWNLOAD_BILIBILI_MERGED'; videos: BilibiliVideoItem[]; ownerName: string; desc: string; source: BilibiliSourceInfo }

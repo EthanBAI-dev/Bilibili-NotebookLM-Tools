@@ -20,6 +20,7 @@ import {
   mergeSubtitlesFormatted,
   fetchBilibiliUserVideos,
   fetchBilibiliFavoriteList,
+  fetchBilibiliCollection,
   convertSubtitleOutput,
 } from '@/services/bilibili';
 import type { SubtitleFetchResult } from '@/services/bilibili';
@@ -1051,6 +1052,10 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
   if (type === 'FETCH_BILIBILI_SPACE') {
     const { mid } = message as { mid: string };
     return await fetchBilibiliUserVideos(mid);
+  }
+  if (type === 'FETCH_BILIBILI_COLLECTION') {
+    const { mid, sid } = message as { mid: string; sid: string };
+    return await fetchBilibiliCollection(mid, sid);
   }
   if (type === 'FETCH_BILIBILI_FAVORITE') {
     const { url } = message as { url: string };

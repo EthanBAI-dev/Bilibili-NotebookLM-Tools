@@ -2,13 +2,13 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Loader2, CheckCircle, AlertCircle, ChevronDown, Download, X } from 'lucide-react';
 import type { ImportItem, ImportProgress } from '@/lib/types';
 import { t } from '@/lib/i18n';
-import { isBilibiliUrl, parseBilibiliUrl, isBilibiliSpaceUrl, parseBilibiliSpaceUrl, isBilibiliFavUrl } from '@/services/bilibili';
+import { detectBilibiliPage, isBilibiliUrl, parseBilibiliUrl, isBilibiliSpaceUrl, parseBilibiliSpaceUrl, isBilibiliFavUrl, parseBilibiliCollectionUrl } from '@/services/bilibili';
 import type { BilibiliVideoItem, BilibiliSourceInfo } from '@/services/bilibili';
 import { getOpState, clearOpState } from '@/services/op-state';
 import { SourceInfoCard, SourceInfoCardSkeleton } from './SourceInfoCard';
 
 type State = 'idle' | 'loading' | 'loaded' | 'fetching' | 'downloading' | 'uploading' | 'importing' | 'done' | 'error';
-type FetchMode = 'single' | 'space' | 'favorite' | 'series' | 'season';
+type FetchMode = 'single' | 'space' | 'favorite' | 'series' | 'season' | 'collection';
 type ExportMode = 'separate' | 'merged';
 type OutputFormat = 'md' | 'txt' | 'json' | 'srt';
 
@@ -33,14 +33,17 @@ interface Props {
  * After API fetch, the mode may be refined based on actual source.type.
  */
 function detectFetchMode(url: string): FetchMode {
-  if (isBilibiliSpaceUrl(url)) return 'space';
-  // Delegate to isBilibiliFavUrl (services/bilibili.ts) instead of re-deriving
-  // the pattern here — the duplicated regex missed /medialist/play/ml{id},
-  // which isBilibiliFavUrl already recognizes, so those links fell through to
-  // 'single' and got rejected as unparseable.
-  if (isBilibiliFavUrl(url)) return 'favorite';
-  if (/bilibili\.com\/video\/.*\?p=\d+/.test(url)) return 'season';
-  return 'single';
+  // Classification lives entirely in services/bilibili.ts — re-deriving these
+  // patterns here is what previously made 合集 links load the UP主's whole
+  // upload list and made /medialist/play/ml{id} links fail as unparseable.
+  const page = detectBilibiliPage(url);
+  switch (page?.kind) {
+    case 'collection': return 'collection';
+    case 'space': return 'space';
+    case 'favorite': return 'favorite';
+    case 'video': return page.page > 1 ? 'season' : 'single';
+    default: return 'single';
+  }
 }
 
 /**
@@ -153,7 +156,30 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
     setDoneMsg('');
     setDisplayCount(PAGE_SIZE);
 
-    if (mode === 'space') {
+    if (mode === 'collection') {
+      const parsed = parseBilibiliCollectionUrl(targetUrl);
+      if (!parsed) {
+        setError(t('bilibili.spaceUnrecognized')); setState('error'); return;
+      }
+      chrome.runtime.sendMessage(
+        { type: 'FETCH_BILIBILI_COLLECTION', mid: parsed.mid, sid: parsed.sid },
+        (resp) => {
+          if (!mountedRef.current || fetchGenRef.current !== gen) return; // stale
+          if (resp?.success && resp.data) {
+            const data = resp.data as { source: BilibiliSourceInfo; videos: BilibiliVideoItem[] };
+            setSource(data.source);
+            setVideos(data.videos);
+            setSelected(getDefaultSelectedVideoKeys(data.videos, targetUrl));
+            setDisplayCount(PAGE_SIZE);
+            setFetchMode(refineMode(data.source, data.videos));
+            setState('loaded');
+          } else {
+            setState('error');
+            setError(resp?.error || t('bilibili.fetchFailed'));
+          }
+        },
+      );
+    } else if (mode === 'space') {
       if (!isBilibiliSpaceUrl(targetUrl) || !parseBilibiliSpaceUrl(targetUrl)) {
         setError(t('bilibili.spaceUnrecognized')); setState('error'); return;
       }

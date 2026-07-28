@@ -16,6 +16,7 @@ import { HistoryPanel } from '@/components/HistoryPanel';
 import { RescueBanner } from '@/components/RescueBanner';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { PanelHint } from '@/components/PanelHint';
 
 export default function App() {
   const { t, locale, setLocale } = useI18n();
@@ -323,6 +324,7 @@ export default function App() {
         {activeTab === 'bilibili' && (
           <div className="animate-fade-in">
             <BilibiliImport initialUrl={initialBilibiliUrl} onProgress={setImportProgress} fetchTrigger={fetchTrigger} onImportHandlerChange={registerImportHandler} />
+            <PanelHint>{t('app.hintBilibili')}</PanelHint>
           </div>
         )}
         {activeTab === 'youtube' && (
@@ -334,21 +336,25 @@ export default function App() {
               onImportHandlerChange={registerImportHandler}
               prefetchedResult={prefetchedYouTubeResult}
             />
+            <PanelHint>{t('app.hintYouTube')}</PanelHint>
           </div>
         )}
         {activeTab === 'podcast' && (
           <div className="animate-fade-in">
             <PodcastImport initialUrl={initialPodcastUrl} fetchTrigger={fetchTrigger} onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
+            <PanelHint>{t('app.hintPodcast')}</PanelHint>
           </div>
         )}
         {activeTab === 'web' && (
           <div className="animate-fade-in">
             <WebImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
+            <PanelHint>{t('app.hintWeb')}</PanelHint>
           </div>
         )}
         {activeTab === 'claude' && (
           <div className="animate-fade-in">
             <AIchatImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} fetchTrigger={fetchTrigger} />
+            <PanelHint>{t('app.hintAI')}</PanelHint>
           </div>
         )}
       </div>
