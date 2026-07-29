@@ -42,7 +42,7 @@ export function RateUsBar() {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-amber-900 truncate">{t('more.rateTitle')}</p>
-        <p className="text-[10.5px] text-amber-700/80 truncate">{t('more.rateDesc')}</p>
+        <p className="text-[11px] text-amber-700/80 truncate">{t('more.rateDesc')}</p>
       </div>
       <button
         onClick={openStore}
