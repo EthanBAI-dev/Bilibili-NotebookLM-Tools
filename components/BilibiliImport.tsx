@@ -560,13 +560,10 @@ export function BilibiliImport({ initialUrl, onProgress, fetchTrigger, onImportH
           platform="bilibili"
           title={source.title}
           favicon="https://www.bilibili.com/favicon.ico"
-          subtitle={[
-            source.owner ? t('bilibili.creator', { name: source.owner }) : '',
-            t('bilibili.videoCount', { count: source.videoCount || videos.length }),
-          ].filter(Boolean).join('|')}
-          inlineTags
+          subtitle={source.owner ? t('bilibili.creator', { name: source.owner }) : undefined}
           tags={subtitleStatus !== 'unavailable' ? [
             source.type === 'series' ? t('bilibili.tagCollection') : source.isSeries && videos.length > 1 ? t('bilibili.tagSeason') : '',
+            t('bilibili.videoCount', { count: source.videoCount || videos.length }),
           ].filter(Boolean) : undefined}
           subtitleStatus={subtitleStatus}
           onDownloadSubtitle={videos.length <= 1 && subtitleStatus !== 'unavailable' && subtitleStatus !== 'checking' ? handleSourceCardDownload : undefined}

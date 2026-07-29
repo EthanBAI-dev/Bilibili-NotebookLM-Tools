@@ -38,6 +38,10 @@ export default defineConfig({
       'webNavigation',
     ],
     host_permissions: [
+      // Both hosts: notebooklm.google.com 302s to notebook.google.com after
+      // the Gemini Notebook rebrand, and cookies only ride along to a
+      // redirect target we also hold permission for.
+      'https://notebook.google.com/*',
       'https://notebooklm.google.com/*',
       'https://claude.ai/*',
       'https://platform.claude.com/*',

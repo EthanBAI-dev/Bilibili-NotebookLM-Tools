@@ -36,6 +36,7 @@ import {
 import type { MessageType, MessageResponse, ClaudeConversation } from '@/lib/types';
 import { runtimeT, type TranslationKey } from '@/lib/i18n';
 import { getSettings } from '@/lib/settings';
+import { isNotebookLmUrl, NOTEBOOKLM_MATCH_PATTERNS } from '@/lib/config';
 
 // Dev reload: allow external messages to trigger extension reload
 try {
@@ -161,7 +162,7 @@ export default defineBackground(() => {
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     if (
       changeInfo.status === 'complete' &&
-      tab.url?.startsWith('https://notebooklm.google.com')
+      isNotebookLmUrl(tab.url)
     ) {
       logSlotDebug('background(tabs.onUpdated)', null, -1, -1);
       setTimeout(fetchAndCacheAccounts, 1000);
@@ -1285,7 +1286,9 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
 
       // Detect current notebook from any open NLM tab URL (UI convenience)
       let current: { id: string; title: string; url: string } | null = null;
-      const nlmTabs = await chrome.tabs.query({ url: 'https://notebooklm.google.com/notebook/*' });
+      const nlmTabs = await chrome.tabs.query({
+        url: NOTEBOOKLM_MATCH_PATTERNS.map((p) => p.replace('/*', '/notebook/*')),
+      });
       if (nlmTabs.length > 0) {
         const tabUrl = nlmTabs[0].url || '';
         const match = tabUrl.match(/\/notebook\/([^/?#]+)/);

@@ -14,7 +14,7 @@
  * has cookies for every account. Switching is purely a parameter change.
  */
 
-import { getSelectedAccountIndex, setSelectedAccountIndex } from '@/lib/config';
+import { getSelectedAccountIndex, setSelectedAccountIndex, NOTEBOOKLM_HOSTS } from '@/lib/config';
 
 /** A single Google account slot */
 export interface GoogleAccountSlot {
@@ -437,7 +437,7 @@ export async function removeSlot(email: string): Promise<void> {
  */
 export function openAddAccount(): void {
   chrome.tabs.create({
-    url: 'https://accounts.google.com/SignOutOptions?continue=https://notebooklm.google.com&addAccount=1',
+    url: `https://accounts.google.com/SignOutOptions?continue=${NOTEBOOKLM_HOSTS.current}&addAccount=1`,
   });
 }
 
@@ -447,7 +447,7 @@ export function openAddAccount(): void {
 export async function checkAuthStatus(): Promise<{ valid: boolean; error?: string }> {
   try {
     const authuser = await getCurrentAuthuser();
-    const url = `https://notebooklm.google.com/?authuser=${authuser}`;
+    const url = `${NOTEBOOKLM_HOSTS.current}/?authuser=${authuser}`;
     const resp = await fetch(url, { method: 'HEAD', credentials: 'include' });
     return { valid: resp.status === 200 };
   } catch (err) {

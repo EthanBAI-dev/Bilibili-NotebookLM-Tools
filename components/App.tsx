@@ -17,6 +17,7 @@ import { RescueBanner } from '@/components/RescueBanner';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { PanelHint } from '@/components/PanelHint';
+import { RateUsBar } from '@/components/RateUsBar';
 
 export default function App() {
   const { t, locale, setLocale } = useI18n();
@@ -229,6 +230,14 @@ export default function App() {
     importHandlerRef.current?.();
   };
 
+  const activeTabHint = {
+    bilibili: t('app.hintBilibili'),
+    youtube: t('app.hintYouTube'),
+    podcast: t('app.hintPodcast'),
+    web: t('app.hintWeb'),
+    claude: t('app.hintAI'),
+  }[activeTab] ?? '';
+
   return (
     <div className="min-h-[480px] bg-surface">
       {/* Header — frosted glass */}
@@ -324,7 +333,6 @@ export default function App() {
         {activeTab === 'bilibili' && (
           <div className="animate-fade-in">
             <BilibiliImport initialUrl={initialBilibiliUrl} onProgress={setImportProgress} fetchTrigger={fetchTrigger} onImportHandlerChange={registerImportHandler} />
-            <PanelHint>{t('app.hintBilibili')}</PanelHint>
           </div>
         )}
         {activeTab === 'youtube' && (
@@ -336,7 +344,6 @@ export default function App() {
               onImportHandlerChange={registerImportHandler}
               prefetchedResult={prefetchedYouTubeResult}
             />
-            <PanelHint>{t('app.hintYouTube')}</PanelHint>
           </div>
         )}
         {activeTab === 'podcast' && (
@@ -347,19 +354,16 @@ export default function App() {
                 just stays disabled here, same as any panel with nothing
                 selected yet. */}
             <PodcastImport initialUrl={initialPodcastUrl} fetchTrigger={fetchTrigger} onProgress={setImportProgress} />
-            <PanelHint>{t('app.hintPodcast')}</PanelHint>
           </div>
         )}
         {activeTab === 'web' && (
           <div className="animate-fade-in">
             <WebImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} />
-            <PanelHint>{t('app.hintWeb')}</PanelHint>
           </div>
         )}
         {activeTab === 'claude' && (
           <div className="animate-fade-in">
             <AIchatImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} fetchTrigger={fetchTrigger} />
-            <PanelHint>{t('app.hintAI')}</PanelHint>
           </div>
         )}
       </div>
@@ -368,10 +372,14 @@ export default function App() {
          Group 2: NotebookLM Settings — account, notebook list, import
          ════════════════════════════════════════════════════════ */}
       <div className="px-4 pt-4 pb-4 space-y-4">
-        {/* Notebook selector */}
-        <div data-tour="notebook-selector">
-          <NotebookSelector />
-        </div>
+        {/* Notebook selector — hidden on the podcast tab. Podcast is
+            download-only (see PodcastImport.tsx) and never targets a
+            notebook, so picking one here would have no effect on that tab. */}
+        {activeTab !== 'podcast' && (
+          <div data-tour="notebook-selector">
+            <NotebookSelector />
+          </div>
+        )}
 
         {/* Unified Import button — hidden on the podcast tab, which is
             download-only (see PodcastImport.tsx) and never registers an
@@ -388,7 +396,16 @@ export default function App() {
             {t('notebook.importToNlm')}
           </button>
         )}
+
+        {/* Per-source hint — anchored under the import action (not the empty
+            panel above it) so it reads as "here's what this button just did
+            / will do" rather than floating above an empty input. */}
+        <PanelHint>{activeTabHint}</PanelHint>
       </div>
+
+      {/* Rate-us CTA — bottom of the panel, shown on every tab until
+          dismissed once (see RateUsBar's own storage-backed dismiss). */}
+      <RateUsBar />
 
       {/* First-time onboarding tour */}
       <OnboardingTour forceShow={forceShowTour} onComplete={() => setForceShowTour(false)} />
