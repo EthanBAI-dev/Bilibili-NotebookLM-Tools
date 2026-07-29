@@ -1,12 +1,12 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Globe,
   ExternalLink,
-  Info,
 } from 'lucide-react';
 import type { ImportProgress } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
 import { SourceInfoCard } from './SourceInfoCard';
+import { InfoPopover } from './InfoPopover';
 
 interface TabItem {
   id: number;
@@ -46,10 +46,8 @@ export function WebImport({ onImportHandlerChange, onProgress }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [currentTabInfo, setCurrentTabInfo] = useState<{ url: string; title: string; favicon?: string } | null>(null);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
 
   const lastTabUrlRef = useMemo(() => ({ current: '' }), []);
-  const helpRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadTabs();
@@ -75,16 +73,6 @@ export function WebImport({ onImportHandlerChange, onProgress }: Props) {
       });
     }
   }, [windows, currentTabId]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!helpRef.current?.contains(event.target as Node)) {
-        setHelpOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Listen for tab switches/updates
   useEffect(() => {
@@ -256,24 +244,11 @@ export function WebImport({ onImportHandlerChange, onProgress }: Props) {
       {windows.length > 0 ? (
         <div>
           {/* Section label */}
-          <div className="relative inline-flex items-center gap-1.5" ref={helpRef}>
+          <div className="inline-flex items-center gap-1.5">
             <label className="text-[11px] font-medium text-gray-500 tracking-wide">{t('web.browserWindows')}</label>
-            <button
-              type="button"
-              onClick={() => setHelpOpen((v) => !v)}
-              className="flex items-center justify-center w-4 h-4 rounded-full text-gray-400 hover:text-notebooklm-blue hover:bg-notebooklm-light transition-colors"
-              aria-label={t('web.listHelpLabel')}
-              title={t('web.listHelpLabel')}
-            >
-              <Info className="w-3 h-3" />
-            </button>
-
-            {helpOpen && (
-              <div className="absolute left-0 top-full mt-1.5 z-20 w-64 rounded-lg border border-gray-200 bg-white shadow-lg p-3 text-[11px] text-gray-500 leading-5">
-                <p className="font-medium text-gray-700 mb-1">{t('web.listHelpTitle')}</p>
-                <p>{t('web.listHelpDesc')}</p>
-              </div>
-            )}
+            <InfoPopover label={t('web.listHelpLabel')} title={t('web.listHelpTitle')}>
+              {t('web.listHelpDesc')}
+            </InfoPopover>
           </div>
 
           {/* Tab list container */}
