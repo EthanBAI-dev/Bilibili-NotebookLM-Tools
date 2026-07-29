@@ -3,7 +3,9 @@ import { Star, X } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 
 const STORAGE_KEY = 'rate_us_dismissed';
-const STORE_URL = 'https://chromewebstore.google.com/detail/noteflow/fdfmlojhomggnppohcmidnmfmffnebcn';
+// /reviews, not the bare listing — a "rate us" CTA should land the user
+// exactly where they can leave a rating, not one extra click away.
+const STORE_URL = 'https://chromewebstore.google.com/detail/noteflow/fdfmlojhomggnppohcmidnmfmffnebcn/reviews';
 
 /**
  * Persistent footer CTA, shown under the shared import action regardless of

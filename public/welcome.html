@@ -13,15 +13,29 @@
         --border: rgba(0,0,0,0.07);
         --text: #1d1d1f;
         --text-secondary: rgba(29,29,31,0.55);
-        --accent: #2563eb;
-        --accent-light: rgba(37,99,235,0.08);
-        --accent-border: rgba(37,99,235,0.15);
+        --accent: #1a73e8;
+        --accent-light: rgba(26,115,232,0.08);
+        --accent-border: rgba(26,115,232,0.15);
         --radius: 14px;
-        --radius-sm: 8px;
+        --radius-sm: 10px;
+
+        /* Same palette the extension's own SourceInfoCard uses per platform,
+           so this page and the sidebar read as the same product. */
+        --c-bilibili: #00a1d6;
+        --c-youtube: #ef4444;
+        --c-web: #64748b;
+        --c-ai: #8b5cf6;
+        --c-account: #1a73e8;
+        --c-batch: #f59e0b;
+
+        /* Hero band — matches assets/promo-hero and assets/promo-features. */
+        --hero-bg-1: #0b1220;
+        --hero-bg-2: #141c30;
+        --hero-text-secondary: rgba(226,232,240,0.65);
       }
 
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', 'Segoe UI', system-ui, sans-serif;
         background: var(--bg);
         color: var(--text);
         min-height: 100vh;
@@ -31,7 +45,7 @@
       .container {
         max-width: 740px;
         margin: 0 auto;
-        padding: 60px 28px 80px;
+        padding: 0 28px 80px;
       }
 
       .pin-toast {
@@ -47,7 +61,7 @@
         display: flex;
         align-items: center;
         gap: 14px;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.14);
         max-width: 460px;
         width: calc(100% - 40px);
         animation: toastIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -105,38 +119,77 @@
         to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
       }
 
-      .hero { text-align: center; padding: 32px 0 48px; }
+      /* ── Hero band — full-bleed dark, matches the promo assets ── */
+      .hero-band {
+        background:
+          radial-gradient(720px 420px at 15% -10%, rgba(26,115,232,0.22), transparent 60%),
+          radial-gradient(560px 360px at 100% 0%, rgba(245,158,11,0.12), transparent 55%),
+          linear-gradient(160deg, var(--hero-bg-1), var(--hero-bg-2));
+        padding-bottom: 56px;
+      }
+
+      .hero { text-align: center; padding: 56px 28px 0; max-width: 740px; margin: 0 auto; }
 
       .hero-logo {
-        width: 60px;
-        height: 60px;
-        margin-bottom: 20px;
-        border-radius: 16px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        width: 56px;
+        height: 56px;
+        margin-bottom: 22px;
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.35);
       }
 
       .hero h1 {
-        font-family: Georgia, 'Times New Roman', serif;
-        font-size: 38px;
-        font-weight: 400;
+        font-size: 34px;
+        font-weight: 700;
         letter-spacing: -0.02em;
-        color: var(--text);
+        line-height: 1.25;
+        color: #ffffff;
       }
 
       .hero h1 em {
-        font-style: italic;
-        color: var(--accent);
+        font-style: normal;
+        color: #fbbf24;
       }
 
       .hero .sub {
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 400;
-        color: var(--text-secondary);
-        line-height: 1.6;
-        max-width: 500px;
-        margin: 12px auto 0;
+        color: var(--hero-text-secondary);
+        line-height: 1.65;
+        max-width: 480px;
+        margin: 16px auto 0;
       }
 
+      .hero-tags {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 24px;
+      }
+
+      .hero-tags span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        color: rgba(255,255,255,0.75);
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        padding: 5px 11px 5px 8px;
+        border-radius: 999px;
+      }
+
+      .hero-tags span::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--dot);
+      }
+
+      /* ── Light body — features / workflow / footer ── */
       .section-label {
         font-size: 10px;
         font-weight: 600;
@@ -145,6 +198,8 @@
         color: var(--text-secondary);
         margin-bottom: 16px;
       }
+
+      .section-label.first { margin-top: 44px; }
 
       .feature-grid {
         display: grid;
@@ -158,20 +213,22 @@
         border: 1px solid var(--border);
         border-radius: var(--radius);
         padding: 22px;
-        transition: border-color 0.25s, box-shadow 0.25s;
+        transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
         cursor: default;
       }
 
       .feature-card:hover {
-        border-color: var(--accent-border);
-        box-shadow: 0 4px 20px rgba(37,99,235,0.06);
+        border-color: var(--card-color, var(--accent-border));
+        box-shadow: 0 8px 24px -8px var(--card-shadow, rgba(26,115,232,0.18));
+        transform: translateY(-1px);
       }
 
       .feature-card .icon {
         width: 34px;
         height: 34px;
         border-radius: var(--radius-sm);
-        background: var(--accent-light);
+        background: var(--card-bg, var(--accent-light));
+        color: var(--card-color, var(--accent));
         display: flex;
         align-items: center;
         justify-content: center;
@@ -203,11 +260,19 @@
       .feature-card .tags span {
         font-size: 10px;
         font-weight: 500;
-        color: var(--accent);
-        background: var(--accent-light);
+        color: var(--card-color, var(--accent));
+        background: var(--card-bg, var(--accent-light));
         padding: 2px 7px;
         border-radius: 4px;
       }
+
+      /* Per-card accent — same values the sidebar's SourceInfoCard uses. */
+      .feature-card.c-bilibili { --card-color: var(--c-bilibili); --card-bg: rgba(0,161,214,0.1); --card-shadow: rgba(0,161,214,0.16); }
+      .feature-card.c-youtube  { --card-color: var(--c-youtube);  --card-bg: rgba(239,68,68,0.1);  --card-shadow: rgba(239,68,68,0.16); }
+      .feature-card.c-web      { --card-color: var(--c-web);      --card-bg: rgba(100,116,139,0.1); --card-shadow: rgba(100,116,139,0.16); }
+      .feature-card.c-ai       { --card-color: var(--c-ai);       --card-bg: rgba(139,92,246,0.1);  --card-shadow: rgba(139,92,246,0.16); }
+      .feature-card.c-account  { --card-color: var(--c-account);  --card-bg: rgba(26,115,232,0.1);  --card-shadow: rgba(26,115,232,0.16); }
+      .feature-card.c-batch    { --card-color: var(--c-batch);    --card-bg: rgba(245,158,11,0.1);  --card-shadow: rgba(245,158,11,0.16); }
 
       .workflow { margin-bottom: 44px; }
 
@@ -228,12 +293,12 @@
       .workflow-step + .workflow-step { border-left: 1px solid var(--border); }
 
       .workflow-step .step-num {
-        font-family: Georgia, serif;
-        font-size: 20px;
+        font-size: 18px;
+        font-weight: 700;
         color: var(--accent);
-        opacity: 0.35;
+        opacity: 0.4;
         line-height: 1;
-        margin-bottom: 5px;
+        margin-bottom: 6px;
       }
 
       .workflow-step .step-label {
@@ -280,8 +345,9 @@
       }
 
       @media (max-width: 640px) {
-        .container { padding: 36px 20px 60px; }
-        .hero h1 { font-size: 30px; }
+        .container { padding: 0 20px 60px; }
+        .hero { padding: 40px 20px 0; }
+        .hero h1 { font-size: 27px; }
         .hero .sub { font-size: 14px; }
         .feature-grid { grid-template-columns: 1fr; }
         .workflow-steps { flex-direction: column; }
@@ -300,46 +366,55 @@
       <button class="pin-toast-close" id="pinToastClose">&times;</button>
     </div>
 
-    <div class="container">
+    <div class="hero-band">
       <header class="hero reveal">
         <img src="./icons/icon-128.png" alt="NoteFlow" class="hero-logo" />
         <h1><em>Note</em>Flow</h1>
         <p class="sub" id="heroSub">将哔哩哔哩、YouTube、播客、网页、AI 对话等内容一键导入 NotebookLM，高效构建你的知识库。</p>
+        <div class="hero-tags">
+          <span style="--dot: var(--c-bilibili)">哔哩哔哩</span>
+          <span style="--dot: var(--c-youtube)">YouTube</span>
+          <span style="--dot: var(--c-batch)">播客</span>
+          <span style="--dot: var(--c-web)">网页</span>
+          <span style="--dot: var(--c-ai)">AI 对话</span>
+        </div>
       </header>
+    </div>
 
-      <div class="section-label reveal" id="featuresLabel">核心能力</div>
+    <div class="container">
+      <div class="section-label first reveal" id="featuresLabel">核心能力</div>
       <div class="feature-grid">
-        <div class="feature-card reveal">
+        <div class="feature-card c-bilibili reveal">
           <div class="icon">🎬</div>
           <h3 id="feature1Title">哔哩哔哩字幕</h3>
           <p id="feature1Desc">导入 Bilibili 视频字幕与弹幕，亦可一键导出为 TXT 格式，便于本地存档与二次加工。</p>
           <div class="tags"><span id="feature1Tag1">字幕导入</span><span id="feature1Tag2">TXT 导出</span></div>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card c-youtube reveal">
           <div class="icon">🎧</div>
           <h3 id="feature2Title">YouTube 与播客导入</h3>
           <p id="feature2Desc">粘贴 YouTube 视频链接或小宇宙播客链接，自动提取内容列表，勾选批量导入 NotebookLM。</p>
           <div class="tags"><span id="feature2Tag1">YouTube</span><span id="feature2Tag2">小宇宙</span></div>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card c-web reveal">
           <div class="icon">📋</div>
           <h3 id="feature3Title">网页内容导入</h3>
           <p id="feature3Desc">自动列出当前浏览器所有窗口的标签页，按窗口分组展示，勾选后一键导入 NotebookLM。</p>
           <div class="tags"><span id="feature3Tag1">浏览器标签页</span><span id="feature3Tag2">URL</span></div>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card c-ai reveal">
           <div class="icon">💬</div>
           <h3 id="feature4Title">AI 对话导入</h3>
           <p id="feature4Desc">提取 Claude、ChatGPT、Gemini 的对话记录，以问答对为单位勾选，导入至 NotebookLM 深度分析。</p>
           <div class="tags"><span>Claude</span><span>ChatGPT</span><span>Gemini</span></div>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card c-account reveal">
           <div class="icon">🔑</div>
           <h3 id="feature5Title">账号体系</h3>
           <p id="feature5Desc">支持 Google 多账号快速切换，自动检测当前 NotebookLM 激活账号，自由选择目标笔记本。</p>
           <div class="tags"><span id="feature5Tag1">Google 账号</span><span id="feature5Tag2">自动检测</span><span id="feature5Tag3">多笔记本</span></div>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card c-batch reveal">
           <div class="icon">⚡</div>
           <h3 id="feature6Title">后台批量导入</h3>
           <p id="feature6Desc">无需打开新标签页，在列表中选中多条内容，后台批量写入 NotebookLM，进度实时显示。</p>
