@@ -16,7 +16,7 @@ import { HistoryPanel } from '@/components/HistoryPanel';
 import { RescueBanner } from '@/components/RescueBanner';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { SettingsPanel } from '@/components/SettingsPanel';
-import { PanelHint } from '@/components/PanelHint';
+import { InfoPopover } from '@/components/InfoPopover';
 import { RateUsBar } from '@/components/RateUsBar';
 
 export default function App() {
@@ -320,8 +320,16 @@ export default function App() {
          Content panel — auto-switched by browser URL detection
          ════════════════════════════════════════════════════════ */}
       <div data-tour="feature-panel" className="px-4 pt-3 space-y-2">
-        <div className="flex items-center">
+        <div className="flex items-center gap-1.5">
           <label className="text-[11px] font-medium text-gray-500 tracking-wide">{t('app.currentSite')}</label>
+          {/* What this tab supports — click-to-reveal rather than a
+              permanently visible box, so it costs nothing for someone who
+              already knows and is one click away for someone who doesn't.
+              Anchored here (not next to a per-tab list) because this row is
+              the one thing every tab renders unconditionally, regardless of
+              whether that tab currently shows a list, a single item, or
+              nothing loaded yet. */}
+          <InfoPopover label={t('app.tabInfoLabel')}>{activeTabHint}</InfoPopover>
           <button
             onClick={handleReadCurrentPage}
             className="p-0.5 text-gray-400 hover:text-notebooklm-blue hover:bg-notebooklm-light rounded-md transition-all duration-150 btn-press"
@@ -384,7 +392,8 @@ export default function App() {
         {/* Unified Import button — hidden on the podcast tab, which is
             download-only (see PodcastImport.tsx) and never registers an
             import handler, so the button could only ever sit there greyed
-            out. The panel's own hint explains the download-then-drag flow. */}
+            out. The info icon next to "当前网站" above explains the
+            download-then-drag flow for that tab. */}
         {activeTab !== 'podcast' && (
           <button
             data-tour="import-button"
@@ -396,11 +405,6 @@ export default function App() {
             {t('notebook.importToNlm')}
           </button>
         )}
-
-        {/* Per-source hint — anchored under the import action (not the empty
-            panel above it) so it reads as "here's what this button just did
-            / will do" rather than floating above an empty input. */}
-        <PanelHint>{activeTabHint}</PanelHint>
       </div>
 
       {/* Rate-us CTA — bottom of the panel, shown on every tab until
