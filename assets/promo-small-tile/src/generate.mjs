@@ -16,16 +16,33 @@ const MARGIN = 32;
 
 const iconB64 = readFileSync(resolve(repoRoot, 'public/icons/icon-128.png')).toString('base64');
 
-// 3-column grid for the platform dots — every row uses the SAME column x
-// positions (even when a row has fewer items) so the block reads as one
-// aligned grid instead of two independently-centered rows.
+// Row 1 (3 items) is a real grid — every column shares an x position.
 const colX = [MARGIN, MARGIN + 128, MARGIN + 256];
-const dotRow = (cy, items) => items.map(([label, color], i) => {
+const gridRow = (cy, items) => items.map(([label, color], i) => {
   const x = colX[i];
   const r = 5;
   return `<circle cx="${x + r}" cy="${cy}" r="${r}" fill="${color}"/>` +
          `<text x="${x + r * 2 + 8}" y="${cy + 5}" font-family="Arial, sans-serif" font-size="14" font-weight="500" fill="rgba(255,255,255,0.85)">${label}</text>`;
 }).join('\n    ');
+
+// Row 2 (2 items) is its own centered, evenly-spaced pair — forcing it onto
+// row 1's grid left an orphaned gap where the third column would be.
+const centeredPair = (cy, items, gap) => {
+  const widths = items.map(([label]) => 20 + label.length * 8); // dot+gap+rough text width
+  const total = widths[0] + gap + widths[1];
+  let x = (W - total) / 2;
+  return items.map(([label, color], i) => {
+    const r = 5;
+    const startX = x;
+    x += widths[i] + gap;
+    return `<circle cx="${startX + r}" cy="${cy}" r="${r}" fill="${color}"/>` +
+           `<text x="${startX + r * 2 + 8}" y="${cy + 5}" font-family="Arial, sans-serif" font-size="14" font-weight="500" fill="rgba(255,255,255,0.85)">${label}</text>`;
+  }).join('\n    ');
+};
+
+const BTN_W = 248, BTN_H = 42;
+const BTN_X = (W - BTN_W) / 2;
+const BTN_Y = 214;
 
 const svg = `
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
@@ -42,9 +59,14 @@ const svg = `
       <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.18"/>
       <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
     </radialGradient>
-    <filter id="cardShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
-    </filter>
+    <!-- Soft halo behind the icon, not a hard-edged card — the icon's own
+         square edge still reads, but the transition into the dark
+         background is gradual instead of a stark white outline. -->
+    <radialGradient id="iconGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8ab4f8" stop-opacity="0.55"/>
+      <stop offset="70%" stop-color="#8ab4f8" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#8ab4f8" stop-opacity="0"/>
+    </radialGradient>
     <filter id="btnShadow" x="-40%" y="-60%" width="180%" height="220%">
       <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0b1220" flood-opacity="0.4"/>
     </filter>
@@ -54,28 +76,32 @@ const svg = `
   <rect width="${W}" height="${H}" fill="url(#glowBlue)"/>
   <rect width="${W}" height="${H}" fill="url(#glowAmber)"/>
 
-  <!-- Icon on a light card — the mark itself is near-black and disappears
-       straight onto the navy background without one. -->
-  <rect x="${MARGIN}" y="24" width="72" height="72" rx="18" fill="#eef2ff" filter="url(#cardShadow)"/>
-  <image x="${MARGIN + 8}" y="32" width="56" height="56" href="data:image/png;base64,${iconB64}"/>
+  <!-- Icon with a soft glow instead of a hard card -->
+  <circle cx="${MARGIN + 36}" cy="60" r="58" fill="url(#iconGlow)"/>
+  <image x="${MARGIN + 4}" y="28" width="64" height="64" href="data:image/png;base64,${iconB64}"/>
 
-  <!-- Wordmark, vertically centered against the icon card (24..96, mid 60) -->
-  <text x="${MARGIN + 72 + 20}" y="66" font-family="Arial, sans-serif" font-size="33" font-weight="700" fill="#ffffff">Note<tspan fill="#fbbf24">Flow</tspan></text>
-  <text x="${MARGIN + 72 + 20}" y="90" font-family="Arial, sans-serif" font-size="14.5" font-weight="400" fill="rgba(226,232,240,0.72)">One sidebar. Five sources.</text>
+  <!-- Wordmark, vertically centered against the icon (28..92, mid 60) -->
+  <text x="${MARGIN + 64 + 22}" y="66" font-family="Arial, sans-serif" font-size="33" font-weight="700" fill="#ffffff">Note<tspan fill="#fbbf24">Flow</tspan></text>
+  <text x="${MARGIN + 64 + 22}" y="90" font-family="Arial, sans-serif" font-size="14.5" font-weight="400" fill="rgba(226,232,240,0.72)">One sidebar. Five sources.</text>
 
   <!-- Divider -->
   <rect x="${MARGIN}" y="114" width="${W - MARGIN * 2}" height="1" fill="rgba(255,255,255,0.1)"/>
 
-  <!-- Platform dots — one aligned 3-column grid across two rows -->
+  <!-- Row 1: aligned 3-column grid. Row 2: centered pair, spaced on its own. -->
   <g>
-    ${dotRow(146, [['Bilibili', '#00a1d6'], ['YouTube', '#ef4444'], ['Podcasts', '#f59e0b']])}
-    ${dotRow(178, [['Web', '#64748b'], ['AI Chats', '#8b5cf6']])}
+    ${gridRow(146, [['Bilibili', '#00a1d6'], ['YouTube', '#ef4444'], ['Podcasts', '#f59e0b']])}
+    ${centeredPair(178, [['Web', '#64748b'], ['AI Chats', '#8b5cf6']], 36)}
   </g>
 
-  <!-- CTA — an actual button, not a caption line, so it reads as the
-       action rather than a footnote. -->
-  <rect x="${MARGIN}" y="214" width="248" height="42" rx="21" fill="#1a73e8" filter="url(#btnShadow)"/>
-  <text x="${MARGIN + 124}" y="240" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">&#8594; Gemini Notebook</text>
+  <!-- CTA button, centered, with the app's own Upload glyph instead of a
+       plain arrow character. -->
+  <rect x="${BTN_X}" y="${BTN_Y}" width="${BTN_W}" height="${BTN_H}" rx="21" fill="#1a73e8" filter="url(#btnShadow)"/>
+  <g transform="translate(${BTN_X + 34}, ${BTN_Y + 11}) scale(0.833)" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/>
+    <line x1="12" y1="3" x2="12" y2="15"/>
+  </g>
+  <text x="${BTN_X + 66}" y="${BTN_Y + 27}" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">Gemini Notebook</text>
 </svg>
 `;
 
