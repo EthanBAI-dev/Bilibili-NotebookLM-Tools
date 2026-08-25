@@ -13,6 +13,7 @@ const RPC_ADD_SOURCE = 'izAoDd';
 const RPC_GET_NOTEBOOK = 'rLM1Ne';
 const RPC_UPDATE_SOURCE = 'b7Wfje';
 const RPC_GET_NOTES = 'cFji9';
+const RPC_LIST_ARTIFACTS = 'gArtLc';
 
 // Delay between batchexecute calls to avoid rate limiting
 const RPC_DELAY_MS = 1200;
@@ -695,17 +696,22 @@ function isMindMapContent(content: string): boolean {
 }
 
 /**
- * List every note in a notebook via GET_NOTES_AND_MIND_MAPS (cFji9) — the
- * same collection NotebookLM's own Studio "Download Notes" export reads
- * from. Mind maps (which share this row collection) and soft-deleted rows
- * are filtered out.
+ * Everything Gemini Notebook's Studio panel labels a "Note" is gathered
+ * here, because that label spans two completely separate backend
+ * collections:
  *
- * Row layout confirmed against a live-captured response (teng-lin/
- * notebooklm-py tests/cassettes/artifacts_download_report.yaml): response
- * decodes to `[rows, ...]`, where each row is either the "current" shape
- * `[id, [id, content, metadata, null, title]]` (content at `row[1][1]`,
- * title at `row[1][4]`) or the legacy `[id, content]` shape (no title); a
- * soft-deleted row is `[id, null, 2]`.
+ * 1. Report artifacts (LIST_ARTIFACTS / `gArtLc`, type code 2) — Study
+ *    Guides, Briefing Docs, Blog Posts and friends. Since the Gemini
+ *    Notebook rebrand these are what the Studio panel shows as "Notes",
+ *    and on a typical notebook they are ALL of them.
+ * 2. Legacy hand-written / saved-from-chat notes
+ *    (GET_NOTES_AND_MIND_MAPS / `cFji9`).
+ *
+ * Querying only (2) — which is what this function used to do — reports
+ * zero notes on a notebook full of generated reports, since a notebook
+ * that never used the old note-taking UI has nothing in that collection
+ * but tombstones. Both are queried and merged; a failure in either is
+ * logged and skipped rather than losing the other's results.
  */
 export async function getNotes(notebookId: string): Promise<GetNotesResult> {
   // Diagnostics are returned to the caller (not just console.log'd) so the
@@ -715,65 +721,151 @@ export async function getNotes(notebookId: string): Promise<GetNotesResult> {
   const debug: string[] = [];
   const log = (msg: string) => { debug.push(msg); console.log(`[notebook-api] ${msg}`); };
 
+  const [reports, legacy] = await Promise.all([
+    getReportNotes(notebookId, log).catch((e) => {
+      log(`report artifacts failed: ${e instanceof Error ? e.message : String(e)}`);
+      return [] as NoteItem[];
+    }),
+    getLegacyNotes(notebookId, log).catch((e) => {
+      log(`legacy notes failed: ${e instanceof Error ? e.message : String(e)}`);
+      return [] as NoteItem[];
+    }),
+  ]);
+
+  const notes = [...reports, ...legacy];
+  log(`total: ${notes.length} note(s) — ${reports.length} report artifact(s) + ${legacy.length} legacy note(s)`);
+  return { notes, debug };
+}
+
+/** Backend artifact type code for the report family (Study Guide, Briefing Doc, Blog Post, …). */
+const ARTIFACT_TYPE_REPORT = 2;
+
+/**
+ * Report-type artifacts, via LIST_ARTIFACTS (gArtLc).
+ *
+ * Row layout confirmed against a live-captured response carrying a
+ * completed Study Guide (teng-lin/notebooklm-py
+ * tests/cassettes/artifacts_download_report.yaml): id=[0], title=[1],
+ * typeCode=[2], markdown body=[7] (a bare string, or a one-element
+ * `[markdown]` wrapper).
+ *
+ * Non-report artifacts (infographics, audio/video overviews, quizzes) are
+ * skipped: they carry images, media URLs or separately-fetched HTML rather
+ * than a markdown body, so there is nothing to write into a `.md` file.
+ */
+async function getReportNotes(notebookId: string, log: (msg: string) => void): Promise<NoteItem[]> {
+  const params = [[2], notebookId, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'];
+  const raw = await rpcCall(RPC_LIST_ARTIFACTS, params, `/notebook/${notebookId}`);
+  log(`listArtifacts raw response (${raw.length} chars): ${raw.slice(0, 1200)}`);
+
+  const lines = raw.split('\n');
+  const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_LIST_ARTIFACTS));
+  if (!dataLine) {
+    log(`listArtifacts: no line contains both "wrb.fr" and "${RPC_LIST_ARTIFACTS}"`);
+    return [];
+  }
+
+  const parsed = JSON.parse(dataLine) as unknown[];
+  const entry = parsed.find(
+    (item): item is [string, string, string] =>
+      Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_LIST_ARTIFACTS,
+  );
+  if (!entry || typeof entry[2] !== 'string') {
+    log(`listArtifacts: no matching wrb.fr entry for ${RPC_LIST_ARTIFACTS}`);
+    return [];
+  }
+
+  const data = JSON.parse(entry[2]);
+  const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
+  log(`listArtifacts: ${rows.length} artifact row(s)`);
+
+  const notes: NoteItem[] = [];
+  const skippedTypes: number[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row)) continue;
+    const id = row[0];
+    if (typeof id !== 'string' || !id) continue;
+
+    const typeCode = typeof row[2] === 'number' ? row[2] : 0;
+    if (typeCode !== ARTIFACT_TYPE_REPORT) { skippedTypes.push(typeCode); continue; }
+
+    const slot = row[7];
+    let markdown: string | null = null;
+    if (typeof slot === 'string') markdown = slot;
+    else if (Array.isArray(slot) && typeof slot[0] === 'string') markdown = slot[0];
+    if (!markdown) { log(`listArtifacts: report "${row[1]}" has no markdown body — skipped`); continue; }
+
+    notes.push({ id, title: typeof row[1] === 'string' && row[1] ? row[1] : 'Untitled', content: markdown });
+  }
+  log(`listArtifacts: kept ${notes.length} report(s); skipped non-report type codes [${skippedTypes.join(', ')}]`);
+  return notes;
+}
+
+/**
+ * Legacy hand-written / saved-from-chat notes, via GET_NOTES_AND_MIND_MAPS
+ * (cFji9). Mind maps (which share this row collection) and soft-deleted
+ * rows are filtered out.
+ *
+ * Row layout confirmed against a live-captured response: the payload
+ * decodes to `[rows, timestamp]`, where each row is either the "current"
+ * shape `[id, [id, content, metadata, null, title]]` (content at
+ * `row[1][1]`, title at `row[1][4]`) or the legacy `[id, content]` shape
+ * (no title); a soft-deleted row is `[id, null, 2]`.
+ */
+async function getLegacyNotes(notebookId: string, log: (msg: string) => void): Promise<NoteItem[]> {
   const params = [notebookId];
   const raw = await rpcCall(RPC_GET_NOTES, params, `/notebook/${notebookId}`);
-  log(`getNotes raw response (${raw.length} chars): ${raw.slice(0, 1500)}`);
+  log(`legacy notes raw response (${raw.length} chars): ${raw.slice(0, 1200)}`);
 
   const lines = raw.split('\n');
   const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTES));
   if (!dataLine) {
-    log(`getNotes: no line contains both "wrb.fr" and "${RPC_GET_NOTES}" — the RPC id or response shape may have changed`);
-    return { notes: [], debug };
+    log(`legacy notes: no line contains both "wrb.fr" and "${RPC_GET_NOTES}"`);
+    return [];
   }
 
-  try {
-    const parsed = JSON.parse(dataLine) as unknown[];
-    const entry = parsed.find(
-      (item): item is [string, string, string] =>
-        Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTES,
-    );
-    if (!entry || typeof entry[2] !== 'string') {
-      log(`getNotes: no matching wrb.fr entry for ${RPC_GET_NOTES}; line was: ${dataLine.slice(0, 800)}`);
-      return { notes: [], debug };
-    }
-
-    const data = JSON.parse(entry[2]);
-    log(`getNotes decoded payload: ${JSON.stringify(data).slice(0, 2000)}`);
-
-    const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
-    log(`getNotes: ${rows.length} raw row(s) at data[0]`);
-
-    const notes: NoteItem[] = [];
-    let skippedMalformed = 0;
-    let skippedNoContent = 0;
-    let skippedMindMap = 0;
-    for (const row of rows) {
-      if (!Array.isArray(row) || row.length < 2) { skippedMalformed++; continue; }
-      const id = row[0];
-      if (typeof id !== 'string' || !id) { skippedMalformed++; continue; }
-
-      const contentSlot = row[1];
-      let content: string | null = null;
-      let title = '';
-      if (typeof contentSlot === 'string') {
-        // Legacy shape: [id, content] — no title slot.
-        content = contentSlot;
-      } else if (Array.isArray(contentSlot)) {
-        // Current shape: [id, [id, content, metadata, null, title]]
-        if (typeof contentSlot[1] === 'string') content = contentSlot[1];
-        if (typeof contentSlot[4] === 'string') title = contentSlot[4];
-      }
-
-      if (!content) { skippedNoContent++; continue; }
-      if (isMindMapContent(content)) { skippedMindMap++; continue; }
-      notes.push({ id, title: title || content.split('\n')[0].slice(0, 80), content });
-    }
-    log(`getNotes: kept ${notes.length}; skipped ${skippedMalformed} malformed / ${skippedNoContent} no-content / ${skippedMindMap} mind-map`);
-    return { notes, debug };
-  } catch (e) {
-    log(`getNotes parse error: ${e instanceof Error ? e.message : String(e)}`);
-    return { notes: [], debug };
+  const parsed = JSON.parse(dataLine) as unknown[];
+  const entry = parsed.find(
+    (item): item is [string, string, string] =>
+      Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTES,
+  );
+  if (!entry || typeof entry[2] !== 'string') {
+    log(`legacy notes: no matching wrb.fr entry for ${RPC_GET_NOTES}`);
+    return [];
   }
+
+  const data = JSON.parse(entry[2]);
+  const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
+  log(`legacy notes: ${rows.length} raw row(s)`);
+
+  const notes: NoteItem[] = [];
+  let skippedMalformed = 0;
+  let skippedNoContent = 0;
+  let skippedMindMap = 0;
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 2) { skippedMalformed++; continue; }
+    const id = row[0];
+    if (typeof id !== 'string' || !id) { skippedMalformed++; continue; }
+
+    const contentSlot = row[1];
+    let content: string | null = null;
+    let title = '';
+    if (typeof contentSlot === 'string') {
+      // Legacy shape: [id, content] — no title slot.
+      content = contentSlot;
+    } else if (Array.isArray(contentSlot)) {
+      // Current shape: [id, [id, content, metadata, null, title]]
+      if (typeof contentSlot[1] === 'string') content = contentSlot[1];
+      if (typeof contentSlot[4] === 'string') title = contentSlot[4];
+    }
+
+    // A null content slot is the soft-delete tombstone [id, null, 2].
+    if (!content) { skippedNoContent++; continue; }
+    if (isMindMapContent(content)) { skippedMindMap++; continue; }
+    notes.push({ id, title: title || content.split('\n')[0].slice(0, 80), content });
+  }
+  log(`legacy notes: kept ${notes.length}; skipped ${skippedMalformed} malformed / ${skippedNoContent} deleted-or-empty / ${skippedMindMap} mind-map`);
+  return notes;
 }
 
 // ── Create notebook ──
