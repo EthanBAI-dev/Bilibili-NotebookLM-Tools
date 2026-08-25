@@ -704,10 +704,14 @@ function isMindMapContent(content: string): boolean {
 export async function getNotes(notebookId: string): Promise<NoteItem[]> {
   const params = [notebookId];
   const raw = await rpcCall(RPC_GET_NOTES, params, `/notebook/${notebookId}`);
+  console.log(`[notebook-api] getNotes raw response (first 3000 chars):`, raw.slice(0, 3000));
 
   const lines = raw.split('\n');
   const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTES));
-  if (!dataLine) return [];
+  if (!dataLine) {
+    console.warn('[notebook-api] getNotes: no line containing both "wrb.fr" and the RPC id — response shape may have changed, or the account has no access to this notebook');
+    return [];
+  }
 
   try {
     const parsed = JSON.parse(dataLine) as unknown[];
@@ -715,16 +719,25 @@ export async function getNotes(notebookId: string): Promise<NoteItem[]> {
       (item): item is [string, string, string] =>
         Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTES,
     );
-    if (!entry || typeof entry[2] !== 'string') return [];
+    if (!entry || typeof entry[2] !== 'string') {
+      console.warn('[notebook-api] getNotes: no matching wrb.fr entry for', RPC_GET_NOTES, '— entries seen:', parsed);
+      return [];
+    }
 
     const data = JSON.parse(entry[2]);
+    console.log('[notebook-api] getNotes decoded data (top-level):', JSON.stringify(data).slice(0, 3000));
+
     const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
+    console.log(`[notebook-api] getNotes: ${rows.length} raw row(s) in data[0]`);
 
     const notes: NoteItem[] = [];
+    let skippedMalformed = 0;
+    let skippedNoContent = 0;
+    let skippedMindMap = 0;
     for (const row of rows) {
-      if (!Array.isArray(row) || row.length < 2) continue;
+      if (!Array.isArray(row) || row.length < 2) { skippedMalformed++; continue; }
       const id = row[0];
-      if (typeof id !== 'string' || !id) continue;
+      if (typeof id !== 'string' || !id) { skippedMalformed++; continue; }
 
       const contentSlot = row[1];
       let content: string | null = null;
@@ -738,9 +751,11 @@ export async function getNotes(notebookId: string): Promise<NoteItem[]> {
         if (typeof contentSlot[4] === 'string') title = contentSlot[4];
       }
 
-      if (!content || isMindMapContent(content)) continue;
+      if (!content) { skippedNoContent++; continue; }
+      if (isMindMapContent(content)) { skippedMindMap++; continue; }
       notes.push({ id, title: title || content.split('\n')[0].slice(0, 80), content });
     }
+    console.log(`[notebook-api] getNotes: ${notes.length} note(s) kept, skipped ${skippedMalformed} malformed / ${skippedNoContent} no-content / ${skippedMindMap} mind-map`);
     return notes;
   } catch (e) {
     console.error('[notebook-api] getNotes parse error:', e);
