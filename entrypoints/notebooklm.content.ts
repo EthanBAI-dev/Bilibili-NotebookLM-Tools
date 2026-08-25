@@ -403,15 +403,19 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Best-effort anchor inside the Studio panel to dock the button next to.
+ * Best-effort anchor for the Studio panel's header ROW — the button is
+ * appended into it and pushed to the far right with `margin-left: auto`,
+ * so it lines up with the row's own trailing controls instead of crowding
+ * the "Studio" label.
+ *
  * The panel's real class names are unknown/unstable (this file has needed
  * re-adaptation to NotebookLM UI changes before — see the file header), so
- * this tries a couple of guesses, then falls back to matching a "Studio" /
- * "工作室" heading by its own text. If none of that is found, the button
- * still gets injected — just as a floating button — so the feature stays
- * reachable rather than silently disappearing.
+ * this tries a couple of guesses, then falls back to locating the
+ * "Studio" / "工作室" heading by its own text and returning its parent row.
+ * When nothing matches, the caller falls back to a floating button so the
+ * feature stays reachable rather than silently disappearing.
  */
-function findStudioAnchor(): HTMLElement | null {
+function findStudioHeaderRow(): HTMLElement | null {
   const selectorCandidates = ['.studio-panel-header', '[class*="studio" i] [class*="header" i]'];
   for (const sel of selectorCandidates) {
     const el = document.querySelector<HTMLElement>(sel);
@@ -422,7 +426,18 @@ function findStudioAnchor(): HTMLElement | null {
   for (const el of headingCandidates) {
     if (el.children.length > 0) continue; // want a leaf node, not a big wrapper
     const text = el.textContent?.trim();
-    if (text === 'Studio' || text === '工作室') return el;
+    if (text !== 'Studio' && text !== '工作室') continue;
+
+    // Walk up to the element that actually spans the row, so the button can
+    // sit at its right edge. A heading is often wrapped in an inline span or
+    // two before reaching the real row, so climb until the candidate is
+    // meaningfully wider than the label itself.
+    let row: HTMLElement | null = el.parentElement;
+    for (let i = 0; i < 3 && row; i++) {
+      if (row.getBoundingClientRect().width > el.getBoundingClientRect().width + 40) return row;
+      row = row.parentElement;
+    }
+    return el.parentElement;
   }
   return null;
 }
@@ -437,27 +452,58 @@ function injectNotesExportButton(): void {
     style.id = 'nlm-notes-export-style';
     style.textContent = `
       #${NOTES_EXPORT_BTN_ID} {
+        /* Pushed to the row's right edge; harmless when the row isn't flex. */
+        margin-left: auto;
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        margin: 4px 8px;
-        padding: 4px 10px;
-        border: 1px solid #dadce0;
-        border-radius: 16px;
-        background: white;
-        color: #1a73e8;
-        font-family: 'Google Sans', Roboto, sans-serif;
-        font-size: 12px;
+        gap: 6px;
+        flex-shrink: 0;
+        padding: 6px 14px 6px 12px;
+        border: 1px solid var(--nlm-ne-border, #dadce0);
+        border-radius: 18px;
+        background: var(--nlm-ne-bg, #fff);
+        color: var(--nlm-ne-fg, #1a73e8);
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 20px;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
         cursor: pointer;
-        transition: background 0.15s;
+        transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
       }
-      #${NOTES_EXPORT_BTN_ID}:hover { background: #f1f3f4; }
+      #${NOTES_EXPORT_BTN_ID} svg {
+        width: 16px; height: 16px; flex-shrink: 0; fill: currentColor;
+      }
+      #${NOTES_EXPORT_BTN_ID}:hover {
+        background: var(--nlm-ne-bg-hover, #f6f9fe);
+        border-color: var(--nlm-ne-border-hover, #d2e3fc);
+        box-shadow: 0 1px 2px rgba(60,64,67,0.12);
+      }
+      #${NOTES_EXPORT_BTN_ID}:active { background: var(--nlm-ne-bg-active, #e8f0fe); }
+      #${NOTES_EXPORT_BTN_ID}:focus-visible {
+        outline: 2px solid var(--nlm-ne-fg, #1a73e8);
+        outline-offset: 2px;
+      }
       #${NOTES_EXPORT_BTN_ID}.nlm-notes-export-floating {
         position: fixed;
         bottom: 20px;
         right: 20px;
         z-index: 99999;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        margin-left: 0;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      }
+      /* NotebookLM ships a dark theme; match it rather than punching a
+         white pill through it. */
+      @media (prefers-color-scheme: dark) {
+        #${NOTES_EXPORT_BTN_ID} {
+          --nlm-ne-border: #5f6368;
+          --nlm-ne-bg: transparent;
+          --nlm-ne-fg: #8ab4f8;
+          --nlm-ne-bg-hover: rgba(138,180,248,0.12);
+          --nlm-ne-border-hover: #8ab4f8;
+          --nlm-ne-bg-active: rgba(138,180,248,0.20);
+        }
       }
       #${NOTES_EXPORT_MODAL_ID} .nlm-ne-overlay {
         position: fixed; inset: 0; background: rgba(0,0,0,0.4);
@@ -513,17 +559,26 @@ function injectNotesExportButton(): void {
 
   const btn = document.createElement('button');
   btn.id = NOTES_EXPORT_BTN_ID;
-  btn.textContent = ct('notesExport.btn');
+  btn.type = 'button';
+  // Material "download" glyph, inlined: an <img>/icon-font reference would
+  // depend on NotebookLM's own asset pipeline, and this content script has
+  // to render standalone.
+  btn.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 15.577 8.462 12.04l.707-.72L11.5 13.65V5h1v8.65l2.33-2.33.708.72L12 15.577ZM6.616 19q-.691 0-1.153-.462Q5 18.075 5 17.384v-2.423h1v2.423q0 .231.192.424.193.192.424.192h10.769q.23 0 .423-.192.192-.193.192-.424v-2.423h1v2.423q0 .691-.462 1.153-.462.462-1.153.462H6.616Z"/>
+    </svg>
+    <span>${escapeHtml(ct('notesExport.btn'))}</span>
+  `;
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     openNotesExportModal();
   });
 
-  const anchor = findStudioAnchor();
-  if (anchor?.parentElement) {
-    anchor.insertAdjacentElement('afterend', btn);
+  const row = findStudioHeaderRow();
+  if (row) {
+    row.appendChild(btn);
   } else {
-    console.warn('[notes-export] Studio panel anchor not found — falling back to a floating button');
+    console.warn('[notes-export] Studio header row not found — falling back to a floating button');
     btn.classList.add('nlm-notes-export-floating');
     document.body.appendChild(btn);
   }
@@ -1377,7 +1432,7 @@ const _csStrings: Record<string, [string, string]> = {
   'failed':            ['失败', 'Failed'],
   'done':              ['✓ 完成', '✓ Done'],
   'close':             ['关闭', 'Close'],
-  'notesExport.btn':             ['📝 导出笔记', '📝 Export Notes'],
+  'notesExport.btn':             ['导出笔记', 'Export Notes'],
   'notesExport.title':           ['导出笔记', 'Export Notes'],
   'notesExport.loading':         ['加载中...', 'Loading...'],
   'notesExport.listFailed':      ['获取笔记列表失败', 'Failed to load notes'],
