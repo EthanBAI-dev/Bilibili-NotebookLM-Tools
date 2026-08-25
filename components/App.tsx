@@ -16,7 +16,7 @@ import { HistoryPanel } from '@/components/HistoryPanel';
 import { RescueBanner } from '@/components/RescueBanner';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { SettingsPanel } from '@/components/SettingsPanel';
-import { NoteGeneration } from '@/components/NoteGeneration';
+import { NotesExport } from '@/components/NotesExport';
 import { InfoPopover } from '@/components/InfoPopover';
 import { RateUsBar } from '@/components/RateUsBar';
 
@@ -383,7 +383,7 @@ export default function App() {
         )}
         {activeTab === 'notes' && (
           <div className="animate-fade-in">
-            <NoteGeneration />
+            <NotesExport />
           </div>
         )}
       </div>

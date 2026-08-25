@@ -1,13 +1,13 @@
-import { fetchNotebooksCached as fetchNotebooksApi } from '@/services/notebook-api';
+import { fetchNotebooksCached as fetchNotebooksApi, getNotes } from '@/services/notebook-api';
 import {
   importUrl,
   importBatch,
   importText,
   getCurrentTabUrl,
   getAllTabUrls,
+  getNotebookId,
 } from '@/services/notebooklm';
 import { convertHtmlToMarkdown } from '@/services/pdf-generator';
-import { generateNote } from '@/services/note-generation';
 import { getHistory, clearHistory } from '@/services/history';
 import { fetchPodcast, sanitizeFilename, buildFilename } from '@/services/podcast';
 import { fetchYouTube, fetchYouTubeMore, checkYouTubeSubtitles } from '@/services/youtube';
@@ -295,32 +295,6 @@ export default defineBackground(() => {
           sendProgress({ phase: 'done' });
         } catch (err) {
           sendProgress({ phase: 'error', error: String(err) });
-        }
-      });
-      return;
-    }
-
-    if (port.name === 'note-generation') {
-      port.onMessage.addListener(async (msg) => {
-        if (msg.type !== 'GENERATE_NOTE') return;
-        const sendProgress = (data: Record<string, unknown>) => {
-          try { port.postMessage(data); } catch { /* disconnected */ }
-        };
-
-        try {
-          sendProgress({ phase: 'starting' });
-          const note = await generateNote(undefined, (progress) => {
-            sendProgress({ phase: progress.phase });
-          });
-
-          const filename = `${sanitizeFilename(note.title)}.md`;
-          const encoded = btoa(unescape(encodeURIComponent(note.markdown)));
-          const dataUrl = `data:text/markdown;base64,${encoded}`;
-          await chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
-
-          sendProgress({ phase: 'done', title: note.title });
-        } catch (err) {
-          sendProgress({ phase: 'error', error: err instanceof Error ? err.message : String(err) });
         }
       });
       return;
@@ -1325,6 +1299,23 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
       }
 
       return { current, notebooks };
+    }
+
+    // ── Notes export (Studio "Notes" — browse + bulk download) ──
+    case 'LIST_NOTEBOOK_NOTES': {
+      const notebookId = await getNotebookId();
+      const notes = await getNotes(notebookId);
+      return { notes };
+    }
+
+    case 'DOWNLOAD_NOTES': {
+      for (const note of message.notes) {
+        const filename = `${sanitizeFilename(note.title)}.md`;
+        const encoded = btoa(unescape(encodeURIComponent(note.content)));
+        const dataUrl = `data:text/markdown;base64,${encoded}`;
+        await chrome.downloads.download({ url: dataUrl, filename, saveAs: false, conflictAction: 'uniquify' });
+      }
+      return { success: true };
     }
 
     default:

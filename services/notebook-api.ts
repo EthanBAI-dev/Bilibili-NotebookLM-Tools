@@ -12,8 +12,7 @@ const RPC_LIST_NOTEBOOKS = 'wXbhsf';
 const RPC_ADD_SOURCE = 'izAoDd';
 const RPC_GET_NOTEBOOK = 'rLM1Ne';
 const RPC_UPDATE_SOURCE = 'b7Wfje';
-const RPC_CREATE_ARTIFACT = 'R7cb6c';
-const RPC_LIST_ARTIFACTS = 'gArtLc';
+const RPC_GET_NOTES = 'cFji9';
 
 // Delay between batchexecute calls to avoid rate limiting
 const RPC_DELAY_MS = 1200;
@@ -664,145 +663,87 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ── Note generation (Studio "report" artifacts: Study Guide, Briefing Doc, …) ──
+// ── Notes listing (Studio "Notes": saved notes, chat answers saved as notes) ──
 
-/**
- * `artifact_data[4]` processing status codes, confirmed against a live
- * CREATE_ARTIFACT/LIST_ARTIFACTS request-response pair (teng-lin/
- * notebooklm-py's recorded test fixtures).
- */
-export const ARTIFACT_STATUS = {
-  PENDING: 1,
-  PROCESSING: 2,
-  COMPLETED: 3,
-  FAILED: 4,
-} as const;
-
-/** Backend type code for report-family artifacts (Study Guide, Briefing Doc, Blog Post, …). */
-const ARTIFACT_TYPE_REPORT = 2;
-
-export interface ArtifactItem {
+export interface NoteItem {
   id: string;
   title: string;
-  typeCode: number;
-  status: number;
-  /** Markdown body, for a completed report-type artifact; null otherwise. */
-  markdown: string | null;
-}
-
-export interface ReportConfig {
-  title: string;
-  description: string;
-  prompt: string;
-  language?: string;
+  content: string;
 }
 
 /**
- * Kick off report generation via CREATE_ARTIFACT (R7cb6c). Generation is
- * async — this returns the new artifact's id immediately; poll
- * `listArtifacts()` for it to reach `ARTIFACT_STATUS.COMPLETED`.
- *
- * Params shape confirmed against a live-captured CREATE_ARTIFACT request for
- * a Study Guide (teng-lin/notebooklm-py tests/cassettes/
- * artifacts_generate_study_guide.yaml): `[[2], notebookId, [null, null, 2,
- * sourceIdsTriple, null, null, null, [null, [title, description, null,
- * sourceIdsDouble, language, prompt, null, true]]]]`.
+ * True when a note's raw content string is actually a mind-map JSON tree
+ * (`{"name": ..., "children": [...]}` or `{"nodes": [...]}`) rather than
+ * plain text/markdown — mind maps live in the same row collection as notes
+ * but aren't meaningfully exportable as a text file.
  */
-export async function generateReportArtifact(
-  notebookId: string,
-  sourceIds: string[],
-  config: ReportConfig,
-): Promise<string> {
-  const sourceIdsTriple = sourceIds.map((id) => [[id]]);
-  const sourceIdsDouble = sourceIds.map((id) => [id]);
-  const language = config.language || 'en';
-
-  const params = [
-    [2],
-    notebookId,
-    [
-      null,
-      null,
-      ARTIFACT_TYPE_REPORT,
-      sourceIdsTriple,
-      null,
-      null,
-      null,
-      [
-        null,
-        [config.title, config.description, null, sourceIdsDouble, language, config.prompt, null, true],
-      ],
-    ],
-  ];
-
-  const raw = await rpcCall(RPC_CREATE_ARTIFACT, params, `/notebook/${notebookId}`);
-  const lines = raw.split('\n');
-  for (const line of lines) {
-    if (!line.includes('wrb.fr') || !line.includes(RPC_CREATE_ARTIFACT)) continue;
-    try {
-      const parsed = JSON.parse(line) as unknown[];
-      const entry = parsed.find(
-        (item): item is [string, string, string] =>
-          Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_CREATE_ARTIFACT,
-      );
-      if (!entry || typeof entry[2] !== 'string') continue;
-      const data = JSON.parse(entry[2]);
-      const artifactId = data?.[0];
-      if (typeof artifactId === 'string' && artifactId) return artifactId;
-    } catch { /* try next line */ }
+function isMindMapContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return !!parsed && typeof parsed === 'object' && ('children' in parsed || 'nodes' in parsed);
+  } catch {
+    return false;
   }
-  throw new Error('[notebook-api] generateReportArtifact: could not parse artifact id from response');
 }
 
 /**
- * List every artifact in a notebook via LIST_ARTIFACTS (gArtLc), including
- * report markdown for completed report-type rows.
+ * List every note in a notebook via GET_NOTES_AND_MIND_MAPS (cFji9) — the
+ * same collection NotebookLM's own Studio "Download Notes" export reads
+ * from. Mind maps (which share this row collection) and soft-deleted rows
+ * are filtered out.
  *
- * Row layout (`artifact_data[N]`) confirmed against a live-captured
- * response containing a completed Study Guide (teng-lin/notebooklm-py
- * tests/cassettes/artifacts_download_report.yaml): id=[0], title=[1],
- * typeCode=[2], status=[4], report markdown=[7] (either a bare string or a
- * one-element `[markdown]` wrapper).
+ * Row layout confirmed against a live-captured response (teng-lin/
+ * notebooklm-py tests/cassettes/artifacts_download_report.yaml): response
+ * decodes to `[rows, ...]`, where each row is either the "current" shape
+ * `[id, [id, content, metadata, null, title]]` (content at `row[1][1]`,
+ * title at `row[1][4]`) or the legacy `[id, content]` shape (no title); a
+ * soft-deleted row is `[id, null, 2]`.
  */
-export async function listArtifacts(notebookId: string): Promise<ArtifactItem[]> {
-  const params = [[2], notebookId, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'];
-  const raw = await rpcCall(RPC_LIST_ARTIFACTS, params, `/notebook/${notebookId}`);
+export async function getNotes(notebookId: string): Promise<NoteItem[]> {
+  const params = [notebookId];
+  const raw = await rpcCall(RPC_GET_NOTES, params, `/notebook/${notebookId}`);
 
   const lines = raw.split('\n');
-  const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_LIST_ARTIFACTS));
+  const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTES));
   if (!dataLine) return [];
 
   try {
     const parsed = JSON.parse(dataLine) as unknown[];
     const entry = parsed.find(
       (item): item is [string, string, string] =>
-        Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_LIST_ARTIFACTS,
+        Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTES,
     );
     if (!entry || typeof entry[2] !== 'string') return [];
 
     const data = JSON.parse(entry[2]);
-    // Response is `[[row1, row2, ...]]` — one wrapping level around the row list.
     const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
 
-    const items: ArtifactItem[] = [];
+    const notes: NoteItem[] = [];
     for (const row of rows) {
-      if (!Array.isArray(row)) continue;
+      if (!Array.isArray(row) || row.length < 2) continue;
       const id = row[0];
       if (typeof id !== 'string' || !id) continue;
-      const title = typeof row[1] === 'string' ? row[1] : '';
-      const typeCode = typeof row[2] === 'number' ? row[2] : 0;
-      const status = typeof row[4] === 'number' ? row[4] : 0;
 
-      let markdown: string | null = null;
-      const reportSlot = row[7];
-      if (typeof reportSlot === 'string') markdown = reportSlot;
-      else if (Array.isArray(reportSlot) && typeof reportSlot[0] === 'string') markdown = reportSlot[0];
+      const contentSlot = row[1];
+      let content: string | null = null;
+      let title = '';
+      if (typeof contentSlot === 'string') {
+        // Legacy shape: [id, content] — no title slot.
+        content = contentSlot;
+      } else if (Array.isArray(contentSlot)) {
+        // Current shape: [id, [id, content, metadata, null, title]]
+        if (typeof contentSlot[1] === 'string') content = contentSlot[1];
+        if (typeof contentSlot[4] === 'string') title = contentSlot[4];
+      }
 
-      items.push({ id, title, typeCode, status, markdown });
+      if (!content || isMindMapContent(content)) continue;
+      notes.push({ id, title: title || content.split('\n')[0].slice(0, 80), content });
     }
-    return items;
+    return notes;
   } catch (e) {
-    console.error('[notebook-api] listArtifacts parse error:', e);
+    console.error('[notebook-api] getNotes parse error:', e);
     return [];
   }
 }

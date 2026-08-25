@@ -89,6 +89,9 @@ export type MessageType =
   | { type: 'IS_BOOKMARKED'; url: string }
   // Notebook info
   | { type: 'GET_NOTEBOOKS'; force?: boolean }
+  // Notes (Studio "Notes" export)
+  | { type: 'LIST_NOTEBOOK_NOTES' }
+  | { type: 'DOWNLOAD_NOTES'; notes: { title: string; content: string }[] }
   // YouTube SPA navigation (content script → background)
   | { type: 'YT_URL_CHANGED'; url: string; tabId: number }
   // YouTube fetch result (background → sidepanel)

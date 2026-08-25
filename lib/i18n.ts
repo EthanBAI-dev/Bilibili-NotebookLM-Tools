@@ -55,7 +55,7 @@ const zh = {
   'app.hintPodcast': '支持 Apple Podcasts 与小宇宙 FM，自动识别当前单集或整档节目，可单集下载或打包下载。暂不支持一键导入 Gemini Notebook，下载后请手动拖入。',
   'app.hintWeb': '导入当前标签页或所有打开的标签页，已有专用工具的平台会自动排除。',
   'app.hintAI': '支持 Claude、ChatGPT 与 Gemini，自动提取问答对，可只选需要的部分导入。',
-  'app.hintNotes': '基于当前笔记本的全部来源，一键生成学习指南笔记并下载为 Markdown 文件。',
+  'app.hintNotes': '浏览当前笔记本里已有的笔记，勾选后批量下载为 Markdown 文件。',
   'app.tabNotes': '笔记',
 
   // ── Notebook Selector ──
@@ -373,18 +373,17 @@ const zh = {
   'settings.importPrefixTitle': '导入名称前缀',
   'settings.importPrefixDesc': '为每个新导入的来源标题自动加上此前缀，便于归类与检索。留空则不加前缀。',
   'settings.importPrefixPlaceholder': '例如：[工作] ',
-  'settings.defaultNotePromptTitle': '一键生成笔记的默认提示词',
-  'settings.defaultNotePromptDesc': '点击"一键生成笔记"时使用的提示词，保存在扩展本地，不会像 Gemini Notebook 页面那样每次被重置。',
-
-  // ── NoteGeneration ──
-  'notes.title': '生成笔记',
-  'notes.description': '基于当前笔记本的全部来源生成一份学习指南笔记，完成后自动下载为 Markdown 文件。',
-  'notes.generate': '一键生成笔记',
-  'notes.starting': '准备中…',
-  'notes.generating': '正在生成，可能需要一两分钟…',
-  'notes.done': '已生成并下载："{title}"',
-  'notes.error': '生成失败',
-  'notes.noSourcesHint': '当前笔记本还没有来源，请先导入一些内容',
+  // ── NotesExport ──
+  'notes.title': '导出笔记',
+  'notes.description': '浏览当前笔记本里已有的笔记，勾选后批量下载为 Markdown 文件。',
+  'notes.listFailed': '获取笔记列表失败',
+  'notes.empty': '当前笔记本还没有笔记',
+  'notes.filterPlaceholder': '筛选笔记…',
+  'notes.selectedCount': '已选 {selected}/{total} 篇',
+  'notes.noSearchResults': '没有匹配的笔记',
+  'notes.downloadSelected': '下载选中 ({count})',
+  'notes.downloadDone': '下载完成',
+  'notes.error': '下载失败',
 
   // ── RssImport ──
   'rss.feedUrl': 'RSS 订阅地址',
@@ -500,7 +499,7 @@ const en: Record<keyof typeof zh, string> = {
   'app.hintPodcast': 'Works with Apple Podcasts and Xiaoyuzhou FM. Detects the current episode or show — download one episode or the whole batch. One-click import to Gemini Notebook isn\'t supported yet; drag the downloaded file in manually.',
   'app.hintWeb': 'Imports the current tab or every open tab. Platforms with a dedicated importer are skipped automatically.',
   'app.hintAI': 'Works with Claude, ChatGPT and Gemini. Extracts Q&A pairs so you can import only the parts you need.',
-  'app.hintNotes': 'One click generates a Study Guide note from every source in the current notebook and downloads it as Markdown.',
+  'app.hintNotes': 'Browse the notes already saved in this notebook and bulk-download the ones you pick as Markdown.',
   'app.tabNotes': 'Notes',
 
   // ── Notebook Selector ──
@@ -818,18 +817,17 @@ const en: Record<keyof typeof zh, string> = {
   'settings.importPrefixTitle': 'Import Name Prefix',
   'settings.importPrefixDesc': 'Automatically prepend this prefix to every newly imported source title, for easier organization and search. Leave empty to disable.',
   'settings.importPrefixPlaceholder': 'e.g. [Work] ',
-  'settings.defaultNotePromptTitle': 'Default prompt for one-click note generation',
-  'settings.defaultNotePromptDesc': 'Used whenever you click "Generate Note". Stored locally in the extension, so it never resets like it does on the Gemini Notebook page.',
-
-  // ── NoteGeneration ──
-  'notes.title': 'Generate Note',
-  'notes.description': 'Generates a Study Guide note from every source in the current notebook, then downloads it as Markdown automatically.',
-  'notes.generate': 'Generate Note',
-  'notes.starting': 'Starting…',
-  'notes.generating': 'Generating — this can take a minute or two…',
-  'notes.done': 'Generated and downloaded: "{title}"',
-  'notes.error': 'Generation failed',
-  'notes.noSourcesHint': 'This notebook has no sources yet — import something first',
+  // ── NotesExport ──
+  'notes.title': 'Export Notes',
+  'notes.description': 'Browse the notes already saved in this notebook, select the ones you want, and download them as Markdown.',
+  'notes.listFailed': 'Failed to load notes',
+  'notes.empty': 'This notebook has no notes yet',
+  'notes.filterPlaceholder': 'Filter notes…',
+  'notes.selectedCount': '{selected}/{total} selected',
+  'notes.noSearchResults': 'No matching notes',
+  'notes.downloadSelected': 'Download Selected ({count})',
+  'notes.downloadDone': 'Download complete',
+  'notes.error': 'Download failed',
 
   // ── RssImport ──
   'rss.feedUrl': 'RSS Feed URL',

@@ -10,21 +10,14 @@ export interface Settings {
   stripBilibiliTimestamps: boolean;
   /** Prepended to every imported source's title, e.g. "[Work] " — empty disables prefixing. */
   importNamePrefix: string;
-  /** Prompt sent when one-click generating a note (Study Guide report) from the current notebook's sources. */
-  defaultNotePrompt: string;
 }
 
 const STORAGE_KEY = 'noteflowSettings';
-
-/** Same default Study Guide prompt NotebookLM's own UI uses. */
-const DEFAULT_NOTE_PROMPT =
-  'Create a comprehensive study guide that includes key concepts, short-answer practice questions, essay prompts for deeper exploration, and a glossary of important terms.';
 
 const DEFAULTS: Settings = {
   autoRenamePastedSources: true,
   stripBilibiliTimestamps: true,
   importNamePrefix: '',
-  defaultNotePrompt: DEFAULT_NOTE_PROMPT,
 };
 
 export async function getSettings(): Promise<Settings> {
