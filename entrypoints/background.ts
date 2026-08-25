@@ -1301,10 +1301,8 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
     }
 
     // ── Notes export (Studio "Notes" — browse + bulk download) ──
-    case 'LIST_NOTEBOOK_NOTES': {
-      const notes = await getNotes(message.notebookId);
-      return { notes };
-    }
+    case 'LIST_NOTEBOOK_NOTES':
+      return await getNotes(message.notebookId);
 
     case 'DOWNLOAD_NOTES': {
       for (const note of message.notes) {

@@ -671,6 +671,12 @@ export interface NoteItem {
   content: string;
 }
 
+export interface GetNotesResult {
+  notes: NoteItem[];
+  /** Step-by-step diagnostics, surfaced in the page console by the caller. */
+  debug: string[];
+}
+
 /**
  * True when a note's raw content string is actually a mind-map JSON tree
  * (`{"name": ..., "children": [...]}` or `{"nodes": [...]}`) rather than
@@ -701,16 +707,23 @@ function isMindMapContent(content: string): boolean {
  * title at `row[1][4]`) or the legacy `[id, content]` shape (no title); a
  * soft-deleted row is `[id, null, 2]`.
  */
-export async function getNotes(notebookId: string): Promise<NoteItem[]> {
+export async function getNotes(notebookId: string): Promise<GetNotesResult> {
+  // Diagnostics are returned to the caller (not just console.log'd) so the
+  // content script can surface them in the page's own console — this code
+  // runs in the service worker, whose console is a separate DevTools window
+  // most users never open.
+  const debug: string[] = [];
+  const log = (msg: string) => { debug.push(msg); console.log(`[notebook-api] ${msg}`); };
+
   const params = [notebookId];
   const raw = await rpcCall(RPC_GET_NOTES, params, `/notebook/${notebookId}`);
-  console.log(`[notebook-api] getNotes raw response (first 3000 chars):`, raw.slice(0, 3000));
+  log(`getNotes raw response (${raw.length} chars): ${raw.slice(0, 1500)}`);
 
   const lines = raw.split('\n');
   const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTES));
   if (!dataLine) {
-    console.warn('[notebook-api] getNotes: no line containing both "wrb.fr" and the RPC id — response shape may have changed, or the account has no access to this notebook');
-    return [];
+    log(`getNotes: no line contains both "wrb.fr" and "${RPC_GET_NOTES}" — the RPC id or response shape may have changed`);
+    return { notes: [], debug };
   }
 
   try {
@@ -720,15 +733,15 @@ export async function getNotes(notebookId: string): Promise<NoteItem[]> {
         Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTES,
     );
     if (!entry || typeof entry[2] !== 'string') {
-      console.warn('[notebook-api] getNotes: no matching wrb.fr entry for', RPC_GET_NOTES, '— entries seen:', parsed);
-      return [];
+      log(`getNotes: no matching wrb.fr entry for ${RPC_GET_NOTES}; line was: ${dataLine.slice(0, 800)}`);
+      return { notes: [], debug };
     }
 
     const data = JSON.parse(entry[2]);
-    console.log('[notebook-api] getNotes decoded data (top-level):', JSON.stringify(data).slice(0, 3000));
+    log(`getNotes decoded payload: ${JSON.stringify(data).slice(0, 2000)}`);
 
     const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
-    console.log(`[notebook-api] getNotes: ${rows.length} raw row(s) in data[0]`);
+    log(`getNotes: ${rows.length} raw row(s) at data[0]`);
 
     const notes: NoteItem[] = [];
     let skippedMalformed = 0;
@@ -755,11 +768,11 @@ export async function getNotes(notebookId: string): Promise<NoteItem[]> {
       if (isMindMapContent(content)) { skippedMindMap++; continue; }
       notes.push({ id, title: title || content.split('\n')[0].slice(0, 80), content });
     }
-    console.log(`[notebook-api] getNotes: ${notes.length} note(s) kept, skipped ${skippedMalformed} malformed / ${skippedNoContent} no-content / ${skippedMindMap} mind-map`);
-    return notes;
+    log(`getNotes: kept ${notes.length}; skipped ${skippedMalformed} malformed / ${skippedNoContent} no-content / ${skippedMindMap} mind-map`);
+    return { notes, debug };
   } catch (e) {
-    console.error('[notebook-api] getNotes parse error:', e);
-    return [];
+    log(`getNotes parse error: ${e instanceof Error ? e.message : String(e)}`);
+    return { notes: [], debug };
   }
 }
 

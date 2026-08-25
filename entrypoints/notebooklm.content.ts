@@ -566,6 +566,12 @@ function openNotesExportModal(): void {
       body.innerHTML = `<div class="nlm-ne-error">${escapeHtml(ct('notesExport.listFailed'))}${resp?.error ? `: ${escapeHtml(resp.error)}` : ''}</div>`;
       return;
     }
+    // Diagnostics come back from the service worker, whose console is a
+    // separate DevTools window — replay them here so everything needed to
+    // debug a wrong/empty listing is in the page console the user has open.
+    for (const line of (resp.data?.debug || []) as string[]) {
+      console.log(`[notes-export] ${line}`);
+    }
     const notes = (resp.data?.notes || []) as { id: string; title: string; content: string }[];
     console.log(`[notes-export] Loaded ${notes.length} notes for notebook ${notebookId}`);
     renderNotesList(body, notes, close);
