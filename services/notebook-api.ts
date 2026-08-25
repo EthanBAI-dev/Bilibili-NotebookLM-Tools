@@ -10,6 +10,10 @@ const NLM_HOME_URL = `${NOTEBOOKLM_HOSTS.current}/`;
 
 const RPC_LIST_NOTEBOOKS = 'wXbhsf';
 const RPC_ADD_SOURCE = 'izAoDd';
+const RPC_GET_NOTEBOOK = 'rLM1Ne';
+const RPC_UPDATE_SOURCE = 'b7Wfje';
+const RPC_GET_NOTES = 'cFji9';
+const RPC_LIST_ARTIFACTS = 'gArtLc';
 
 // Delay between batchexecute calls to avoid rate limiting
 const RPC_DELAY_MS = 1200;
@@ -508,6 +512,134 @@ export async function addSourceUrl(notebookId: string, url: string): Promise<voi
   await rpcCall(RPC_ADD_SOURCE, params, `/notebook/${notebookId}`);
 }
 
+// ── Source list / rename (for the custom name-prefix feature) ──
+
+export interface NotebookSourceItem {
+  id: string;
+  title: string;
+}
+
+/**
+ * Fetch id+title for every source in a notebook, via GET_NOTEBOOK (rLM1Ne).
+ *
+ * Params and response layout confirmed against a live-captured request/
+ * response pair (teng-lin/notebooklm-py's recorded test fixtures, not just
+ * its docs): the response decodes to `[nbInfo]`, where `nbInfo[1]` is the
+ * source list and each source row is `[idEnvelope, title, metadata,
+ * statusBlock, ...]` — `idEnvelope` is usually `["id"]`, occasionally
+ * `[null, true, ["id"]]` for Drive-backed sources.
+ */
+export async function getNotebookSources(notebookId: string): Promise<NotebookSourceItem[]> {
+  const params = [
+    notebookId,
+    null,
+    [2, null, null, [1, null, null, null, null, null, null, null, null, null, [1]]],
+    null,
+    0,
+  ];
+  const raw = await rpcCall(RPC_GET_NOTEBOOK, params, `/notebook/${notebookId}`);
+  return parseNotebookSources(raw);
+}
+
+/** Extract a source id from its envelope: `"id"`, `["id"]`, or `[null, true, ["id"]]`. */
+function extractSourceId(idEnvelope: unknown): string {
+  if (typeof idEnvelope === 'string') return idEnvelope;
+  if (!Array.isArray(idEnvelope) || idEnvelope.length === 0) return '';
+  const [first] = idEnvelope;
+  if (typeof first === 'string') return first;
+  // Drive-backed nesting: [null, true, ["id"]]
+  const inner = idEnvelope[2];
+  if (Array.isArray(inner) && typeof inner[0] === 'string') return inner[0];
+  return '';
+}
+
+function parseNotebookSources(rawText: string): NotebookSourceItem[] {
+  try {
+    const lines = rawText.split('\n');
+    const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTEBOOK));
+    if (!dataLine) {
+      console.warn('[notebook-api] getNotebookSources: no wrb.fr line found');
+      return [];
+    }
+
+    const parsed = JSON.parse(dataLine) as unknown[];
+    const entry = parsed.find(
+      (item): item is [string, string, string] =>
+        Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTEBOOK,
+    );
+    if (!entry || typeof entry[2] !== 'string') {
+      console.warn('[notebook-api] getNotebookSources: no matching wrb.fr entry');
+      return [];
+    }
+
+    const data = JSON.parse(entry[2]);
+    const nbInfo = data?.[0];
+    const sourceRows = Array.isArray(nbInfo?.[1]) ? nbInfo[1] : [];
+
+    const sources: NotebookSourceItem[] = [];
+    for (const row of sourceRows) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      const id = extractSourceId(row[0]);
+      const title = typeof row[1] === 'string' ? row[1] : '';
+      if (id) sources.push({ id, title });
+    }
+
+    console.log(`[notebook-api] getNotebookSources: parsed ${sources.length} source rows`);
+    return sources;
+  } catch (e) {
+    console.error('[notebook-api] getNotebookSources parse error:', e);
+    return [];
+  }
+}
+
+/**
+ * Rename an existing source via UPDATE_SOURCE (b7Wfje).
+ * Params `[null, [sourceId], [[[newTitle]]]]` confirmed against a live
+ * request/response cassette (teng-lin/notebooklm-py tests/cassettes/
+ * sources_rename.yaml).
+ */
+export async function renameSourceRpc(notebookId: string, sourceId: string, newTitle: string): Promise<void> {
+  console.log(`[notebook-api] renameSourceRpc: source=${sourceId}, newTitle="${newTitle}"`);
+  const params = [null, [sourceId], [[[newTitle]]]];
+  await rpcCall(RPC_UPDATE_SOURCE, params, `/notebook/${notebookId}`);
+}
+
+/**
+ * Add a URL source and, if `prefix` is non-empty, rename it from the
+ * server-assigned title to `prefix + title`. addSourceUrl() never learns
+ * the new source's id from its own response, so this diffs the notebook's
+ * source list before/after to find it — two extra round trips, only paid
+ * when a prefix is actually configured.
+ */
+export async function addSourceUrlWithPrefix(notebookId: string, url: string, prefix: string): Promise<void> {
+  if (!prefix) {
+    await addSourceUrl(notebookId, url);
+    return;
+  }
+
+  const before = await getNotebookSources(notebookId);
+  const beforeIds = new Set(before.map((s) => s.id));
+
+  await addSourceUrl(notebookId, url);
+
+  // NotebookLM needs a moment to fetch the URL and assign a title before
+  // the new source shows up in the list.
+  await delay(1500);
+
+  const after = await getNotebookSources(notebookId);
+  const added = after.find((s) => !beforeIds.has(s.id));
+  if (!added) {
+    console.warn('[notebook-api] addSourceUrlWithPrefix: could not identify the new source — skipping rename');
+    return;
+  }
+
+  try {
+    await renameSourceRpc(notebookId, added.id, `${prefix}${added.title}`);
+  } catch (e) {
+    console.warn('[notebook-api] addSourceUrlWithPrefix: rename failed (non-fatal):', e);
+  }
+}
+
 // ── Add source (text) ──
 
 export async function addSourceText(
@@ -530,6 +662,210 @@ export async function addSourceText(
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ── Notes listing (Studio "Notes": saved notes, chat answers saved as notes) ──
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface GetNotesResult {
+  notes: NoteItem[];
+  /** Step-by-step diagnostics, surfaced in the page console by the caller. */
+  debug: string[];
+}
+
+/**
+ * True when a note's raw content string is actually a mind-map JSON tree
+ * (`{"name": ..., "children": [...]}` or `{"nodes": [...]}`) rather than
+ * plain text/markdown — mind maps live in the same row collection as notes
+ * but aren't meaningfully exportable as a text file.
+ */
+function isMindMapContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return !!parsed && typeof parsed === 'object' && ('children' in parsed || 'nodes' in parsed);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Everything Gemini Notebook's Studio panel labels a "Note" is gathered
+ * here, because that label spans two completely separate backend
+ * collections:
+ *
+ * 1. Report artifacts (LIST_ARTIFACTS / `gArtLc`, type code 2) — Study
+ *    Guides, Briefing Docs, Blog Posts and friends. Since the Gemini
+ *    Notebook rebrand these are what the Studio panel shows as "Notes",
+ *    and on a typical notebook they are ALL of them.
+ * 2. Legacy hand-written / saved-from-chat notes
+ *    (GET_NOTES_AND_MIND_MAPS / `cFji9`).
+ *
+ * Querying only (2) — which is what this function used to do — reports
+ * zero notes on a notebook full of generated reports, since a notebook
+ * that never used the old note-taking UI has nothing in that collection
+ * but tombstones. Both are queried and merged; a failure in either is
+ * logged and skipped rather than losing the other's results.
+ */
+export async function getNotes(notebookId: string): Promise<GetNotesResult> {
+  // Diagnostics are returned to the caller (not just console.log'd) so the
+  // content script can surface them in the page's own console — this code
+  // runs in the service worker, whose console is a separate DevTools window
+  // most users never open.
+  const debug: string[] = [];
+  const log = (msg: string) => { debug.push(msg); console.log(`[notebook-api] ${msg}`); };
+
+  const [reports, legacy] = await Promise.all([
+    getReportNotes(notebookId, log).catch((e) => {
+      log(`report artifacts failed: ${e instanceof Error ? e.message : String(e)}`);
+      return [] as NoteItem[];
+    }),
+    getLegacyNotes(notebookId, log).catch((e) => {
+      log(`legacy notes failed: ${e instanceof Error ? e.message : String(e)}`);
+      return [] as NoteItem[];
+    }),
+  ]);
+
+  const notes = [...reports, ...legacy];
+  log(`total: ${notes.length} note(s) — ${reports.length} report artifact(s) + ${legacy.length} legacy note(s)`);
+  return { notes, debug };
+}
+
+/** Backend artifact type code for the report family (Study Guide, Briefing Doc, Blog Post, …). */
+const ARTIFACT_TYPE_REPORT = 2;
+
+/**
+ * Report-type artifacts, via LIST_ARTIFACTS (gArtLc).
+ *
+ * Row layout confirmed against a live-captured response carrying a
+ * completed Study Guide (teng-lin/notebooklm-py
+ * tests/cassettes/artifacts_download_report.yaml): id=[0], title=[1],
+ * typeCode=[2], markdown body=[7] (a bare string, or a one-element
+ * `[markdown]` wrapper).
+ *
+ * Non-report artifacts (infographics, audio/video overviews, quizzes) are
+ * skipped: they carry images, media URLs or separately-fetched HTML rather
+ * than a markdown body, so there is nothing to write into a `.md` file.
+ */
+async function getReportNotes(notebookId: string, log: (msg: string) => void): Promise<NoteItem[]> {
+  const params = [[2], notebookId, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'];
+  const raw = await rpcCall(RPC_LIST_ARTIFACTS, params, `/notebook/${notebookId}`);
+  log(`listArtifacts raw response (${raw.length} chars): ${raw.slice(0, 1200)}`);
+
+  const lines = raw.split('\n');
+  const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_LIST_ARTIFACTS));
+  if (!dataLine) {
+    log(`listArtifacts: no line contains both "wrb.fr" and "${RPC_LIST_ARTIFACTS}"`);
+    return [];
+  }
+
+  const parsed = JSON.parse(dataLine) as unknown[];
+  const entry = parsed.find(
+    (item): item is [string, string, string] =>
+      Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_LIST_ARTIFACTS,
+  );
+  if (!entry || typeof entry[2] !== 'string') {
+    log(`listArtifacts: no matching wrb.fr entry for ${RPC_LIST_ARTIFACTS}`);
+    return [];
+  }
+
+  const data = JSON.parse(entry[2]);
+  const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
+  log(`listArtifacts: ${rows.length} artifact row(s)`);
+
+  const notes: NoteItem[] = [];
+  const skippedTypes: number[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row)) continue;
+    const id = row[0];
+    if (typeof id !== 'string' || !id) continue;
+
+    const typeCode = typeof row[2] === 'number' ? row[2] : 0;
+    if (typeCode !== ARTIFACT_TYPE_REPORT) { skippedTypes.push(typeCode); continue; }
+
+    const slot = row[7];
+    let markdown: string | null = null;
+    if (typeof slot === 'string') markdown = slot;
+    else if (Array.isArray(slot) && typeof slot[0] === 'string') markdown = slot[0];
+    if (!markdown) { log(`listArtifacts: report "${row[1]}" has no markdown body — skipped`); continue; }
+
+    notes.push({ id, title: typeof row[1] === 'string' && row[1] ? row[1] : 'Untitled', content: markdown });
+  }
+  log(`listArtifacts: kept ${notes.length} report(s); skipped non-report type codes [${skippedTypes.join(', ')}]`);
+  return notes;
+}
+
+/**
+ * Legacy hand-written / saved-from-chat notes, via GET_NOTES_AND_MIND_MAPS
+ * (cFji9). Mind maps (which share this row collection) and soft-deleted
+ * rows are filtered out.
+ *
+ * Row layout confirmed against a live-captured response: the payload
+ * decodes to `[rows, timestamp]`, where each row is either the "current"
+ * shape `[id, [id, content, metadata, null, title]]` (content at
+ * `row[1][1]`, title at `row[1][4]`) or the legacy `[id, content]` shape
+ * (no title); a soft-deleted row is `[id, null, 2]`.
+ */
+async function getLegacyNotes(notebookId: string, log: (msg: string) => void): Promise<NoteItem[]> {
+  const params = [notebookId];
+  const raw = await rpcCall(RPC_GET_NOTES, params, `/notebook/${notebookId}`);
+  log(`legacy notes raw response (${raw.length} chars): ${raw.slice(0, 1200)}`);
+
+  const lines = raw.split('\n');
+  const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTES));
+  if (!dataLine) {
+    log(`legacy notes: no line contains both "wrb.fr" and "${RPC_GET_NOTES}"`);
+    return [];
+  }
+
+  const parsed = JSON.parse(dataLine) as unknown[];
+  const entry = parsed.find(
+    (item): item is [string, string, string] =>
+      Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTES,
+  );
+  if (!entry || typeof entry[2] !== 'string') {
+    log(`legacy notes: no matching wrb.fr entry for ${RPC_GET_NOTES}`);
+    return [];
+  }
+
+  const data = JSON.parse(entry[2]);
+  const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
+  log(`legacy notes: ${rows.length} raw row(s)`);
+
+  const notes: NoteItem[] = [];
+  let skippedMalformed = 0;
+  let skippedNoContent = 0;
+  let skippedMindMap = 0;
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 2) { skippedMalformed++; continue; }
+    const id = row[0];
+    if (typeof id !== 'string' || !id) { skippedMalformed++; continue; }
+
+    const contentSlot = row[1];
+    let content: string | null = null;
+    let title = '';
+    if (typeof contentSlot === 'string') {
+      // Legacy shape: [id, content] — no title slot.
+      content = contentSlot;
+    } else if (Array.isArray(contentSlot)) {
+      // Current shape: [id, [id, content, metadata, null, title]]
+      if (typeof contentSlot[1] === 'string') content = contentSlot[1];
+      if (typeof contentSlot[4] === 'string') title = contentSlot[4];
+    }
+
+    // A null content slot is the soft-delete tombstone [id, null, 2].
+    if (!content) { skippedNoContent++; continue; }
+    if (isMindMapContent(content)) { skippedMindMap++; continue; }
+    notes.push({ id, title: title || content.split('\n')[0].slice(0, 80), content });
+  }
+  log(`legacy notes: kept ${notes.length}; skipped ${skippedMalformed} malformed / ${skippedNoContent} deleted-or-empty / ${skippedMindMap} mind-map`);
+  return notes;
 }
 
 // ── Create notebook ──

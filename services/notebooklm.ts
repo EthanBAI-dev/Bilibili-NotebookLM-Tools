@@ -1,12 +1,13 @@
 import { getSelectedNotebook, setSelectedNotebook } from '@/lib/config';
 import { delay } from '@/lib/utils';
+import { getSettings } from '@/lib/settings';
 import type { ImportItem, ImportProgress } from '@/lib/types';
 import { addToHistory } from './history';
-import { addSourceUrl, addSourceText, fetchNotebooksCached } from './notebook-api';
+import { addSourceUrlWithPrefix, addSourceText, fetchNotebooksCached } from './notebook-api';
 
 const BATCH_DELAY_MS = 1200;
 
-async function getNotebookId(): Promise<string> {
+export async function getNotebookId(): Promise<string> {
   const selected = await getSelectedNotebook();
   if (selected) return selected.id;
 
@@ -23,7 +24,8 @@ async function getNotebookId(): Promise<string> {
 export async function importUrl(url: string, _targetTabId?: number): Promise<boolean> {
   try {
     const notebookId = await getNotebookId();
-    await addSourceUrl(notebookId, url);
+    const { importNamePrefix } = await getSettings();
+    await addSourceUrlWithPrefix(notebookId, url, importNamePrefix);
     await addToHistory(url, 'success');
     return true;
   } catch (error) {
@@ -52,6 +54,7 @@ export async function importBatch(
 
   try {
     const notebookId = await getNotebookId();
+    const { importNamePrefix } = await getSettings();
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -60,7 +63,7 @@ export async function importBatch(
       onProgress?.(progress);
 
       try {
-        await addSourceUrl(notebookId, item.url);
+        await addSourceUrlWithPrefix(notebookId, item.url, importNamePrefix);
         item.status = 'success';
         await addToHistory(item.url, 'success');
       } catch (error) {
@@ -93,12 +96,17 @@ export async function importText(
   text: string,
   title?: string,
   _targetTabId?: number,
-  _renamePrefix?: string,
+  explicitPrefix?: string,
 ): Promise<boolean> {
   const historyTitle = title || 'Imported text';
   try {
     const notebookId = await getNotebookId();
-    await addSourceText(notebookId, title || 'Pasted Text', text);
+    const { importNamePrefix } = await getSettings();
+    // explicitPrefix carries call-site markers (e.g. the Rescue flow's 🛟
+    // prefix) and always wins over the user's global setting when both are
+    // present, so rescued sources stay visually distinct.
+    const prefix = explicitPrefix || importNamePrefix;
+    await addSourceText(notebookId, `${prefix}${title || 'Pasted Text'}`, text);
     await addToHistory(`text://${historyTitle}`, 'success', historyTitle);
     return true;
   } catch (error) {

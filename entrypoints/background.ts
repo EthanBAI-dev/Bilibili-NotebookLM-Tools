@@ -1,4 +1,4 @@
-import { fetchNotebooksCached as fetchNotebooksApi } from '@/services/notebook-api';
+import { fetchNotebooksCached as fetchNotebooksApi, getNotes } from '@/services/notebook-api';
 import {
   importUrl,
   importBatch,
@@ -120,6 +120,41 @@ async function broadcastToSidepanel(msg: Record<string, unknown>): Promise<void>
 // download, and force it here. Downloads not in this map (i.e. everything
 // that isn't a podcast episode) fall through untouched.
 const pendingPodcastFilenames = new Map<string, string>();
+
+/**
+ * Build a filename stem from a note title.
+ *
+ * Deliberately stricter than services/podcast.ts's `sanitizeFilename`,
+ * which was written for podcast episode names: chrome.downloads.download()
+ * *rejects* a filename it considers invalid rather than cleaning it up, and
+ * a rejected hint is why exported notes landed as the browser's own generic
+ * name ("ダウンロード.md") instead of the note's title. On top of the
+ * reserved characters, this also strips control characters and path
+ * separators, refuses Windows' reserved device names, trims the leading and
+ * trailing dots/spaces Windows silently drops, and caps the length in
+ * *bytes* — a 200-character CJK title is 600 bytes and can blow the path
+ * limit even though it looks short.
+ */
+function noteFilenameStem(title: string): string {
+  let stem = title
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[.\s]+|[.\s]+$/g, '');
+
+  // Trim to a byte budget, not a character count, without splitting a
+  // multi-byte character in half.
+  const MAX_BYTES = 120;
+  while (new TextEncoder().encode(stem).length > MAX_BYTES) {
+    stem = stem.slice(0, -1);
+  }
+  stem = stem.replace(/[.\s]+$/g, '');
+
+  if (!stem || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(stem)) return 'note';
+  return stem;
+}
 
 export default defineBackground(() => {
   console.log('NoteFlow background service started');
@@ -1298,6 +1333,32 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
       }
 
       return { current, notebooks };
+    }
+
+    // ── Notes export (Studio "Notes" — browse + bulk download) ──
+    case 'LIST_NOTEBOOK_NOTES':
+      return await getNotes(message.notebookId);
+
+    case 'DOWNLOAD_NOTES': {
+      const debug: string[] = [];
+      for (const note of message.notes) {
+        const filename = `${noteFilenameStem(note.title)}.md`;
+        debug.push(`"${note.title}" → ${filename}`);
+        const encoded = btoa(unescape(encodeURIComponent(note.content)));
+        const dataUrl = `data:text/markdown;base64,${encoded}`;
+        try {
+          await chrome.downloads.download({ url: dataUrl, filename, saveAs: false, conflictAction: 'uniquify' });
+        } catch (e) {
+          // Chrome rejects the whole download on an invalid `filename`, so a
+          // name this sanitizer failed to tame would otherwise lose the note
+          // entirely. Retry unnamed: the browser picks a generic name, but
+          // the content still lands.
+          const msg = e instanceof Error ? e.message : String(e);
+          debug.push(`  ↑ rejected (${msg}) — retrying without a filename hint`);
+          await chrome.downloads.download({ url: dataUrl, saveAs: false, conflictAction: 'uniquify' });
+        }
+      }
+      return { success: true, debug };
     }
 
     default:

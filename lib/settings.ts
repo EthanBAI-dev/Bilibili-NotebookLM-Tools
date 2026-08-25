@@ -8,6 +8,8 @@ export interface Settings {
   autoRenamePastedSources: boolean;
   /** Strip timestamp markers from Bilibili subtitles (enabled = clean text, disabled = timestamps preserved). */
   stripBilibiliTimestamps: boolean;
+  /** Prepended to every imported source's title, e.g. "[Work] " — empty disables prefixing. */
+  importNamePrefix: string;
 }
 
 const STORAGE_KEY = 'noteflowSettings';
@@ -15,6 +17,7 @@ const STORAGE_KEY = 'noteflowSettings';
 const DEFAULTS: Settings = {
   autoRenamePastedSources: true,
   stripBilibiliTimestamps: true,
+  importNamePrefix: '',
 };
 
 export async function getSettings(): Promise<Settings> {

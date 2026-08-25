@@ -368,6 +368,9 @@ const zh = {
   'more.aiPolishRemoved': '已移除 AI 润色功能，当前设置页仅保留扩展通用设置。',
   'settings.stripTimestamps': '清除 B站字幕时间戳',
   'settings.stripTimestampsDesc': '开启后，Bilibili 字幕将自动移除时间戳并整理为连贯段落；关闭后将保留原始时间戳标记。',
+  'settings.importPrefixTitle': '导入名称前缀',
+  'settings.importPrefixDesc': '为每个新导入的来源标题自动加上此前缀，便于归类与检索。留空则不加前缀。',
+  'settings.importPrefixPlaceholder': '例如：[工作] ',
 
   // ── RssImport ──
   'rss.feedUrl': 'RSS 订阅地址',
@@ -796,6 +799,9 @@ const en: Record<keyof typeof zh, string> = {
   'more.aiPolishRemoved': 'AI polishing has been removed. The settings page now only keeps general extension settings.',
   'settings.stripTimestamps': 'Strip Bilibili subtitle timestamps',
   'settings.stripTimestampsDesc': 'When enabled, Bilibili subtitles will have timestamps removed and be merged into clean paragraphs. When disabled, original timestamps are preserved.',
+  'settings.importPrefixTitle': 'Import Name Prefix',
+  'settings.importPrefixDesc': 'Automatically prepend this prefix to every newly imported source title, for easier organization and search. Leave empty to disable.',
+  'settings.importPrefixPlaceholder': 'e.g. [Work] ',
 
   // ── RssImport ──
   'rss.feedUrl': 'RSS Feed URL',
