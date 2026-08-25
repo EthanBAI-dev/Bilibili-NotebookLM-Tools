@@ -657,6 +657,9 @@ function renderNotesList(
       { type: 'DOWNLOAD_NOTES', notes: toDownload.map((n) => ({ title: n.title, content: n.content })) },
       (resp) => {
         downloadBtn.disabled = selected.size === 0;
+        for (const line of (resp?.data?.debug || []) as string[]) {
+          console.log(`[notes-export] ${line}`);
+        }
         if (resp?.success) {
           statusEl.textContent = ct('notesExport.downloadDone');
           statusEl.className = 'nlm-ne-status nlm-ne-status-ok';
