@@ -89,8 +89,11 @@ export type MessageType =
   | { type: 'IS_BOOKMARKED'; url: string }
   // Notebook info
   | { type: 'GET_NOTEBOOKS'; force?: boolean }
-  // Notes (Studio "Notes" export)
-  | { type: 'LIST_NOTEBOOK_NOTES' }
+  // Notes (Studio "Notes" export) — notebookId comes from the content
+  // script's own page URL, not the side panel's separately-tracked
+  // "selected notebook", so this always targets whatever notebook the
+  // user is actually looking at.
+  | { type: 'LIST_NOTEBOOK_NOTES'; notebookId: string }
   | { type: 'DOWNLOAD_NOTES'; notes: { title: string; content: string }[] }
   // YouTube SPA navigation (content script → background)
   | { type: 'YT_URL_CHANGED'; url: string; tabId: number }

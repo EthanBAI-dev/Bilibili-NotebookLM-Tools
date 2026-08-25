@@ -5,7 +5,6 @@ import {
   importText,
   getCurrentTabUrl,
   getAllTabUrls,
-  getNotebookId,
 } from '@/services/notebooklm';
 import { convertHtmlToMarkdown } from '@/services/pdf-generator';
 import { getHistory, clearHistory } from '@/services/history';
@@ -1303,8 +1302,7 @@ async function handleMessage(message: MessageType, senderTabId?: number): Promis
 
     // ── Notes export (Studio "Notes" — browse + bulk download) ──
     case 'LIST_NOTEBOOK_NOTES': {
-      const notebookId = await getNotebookId();
-      const notes = await getNotes(notebookId);
+      const notes = await getNotes(message.notebookId);
       return { notes };
     }
 

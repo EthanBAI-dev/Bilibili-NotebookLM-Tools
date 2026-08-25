@@ -80,9 +80,13 @@ export default defineContentScript({
     // Use body-level observer to catch SPA navigations (list → notebook detail)
     // since .scroll-area-desktop doesn't exist on the list page
     setTimeout(() => injectMoreActionsButton(), 2500);
+    setTimeout(() => injectNotesExportButton(), 2500);
     const moreActionsObserver = new MutationObserver(() => {
       if (!document.getElementById('nlm-more-actions-btn') && document.querySelector('.scroll-area-desktop')) {
         injectMoreActionsButton();
+      }
+      if (!document.getElementById(NOTES_EXPORT_BTN_ID)) {
+        injectNotesExportButton();
       }
     });
     moreActionsObserver.observe(document.body, { childList: true, subtree: true });
@@ -371,6 +375,295 @@ async function removeSingleSource(container: HTMLElement): Promise<void> {
 
   confirmBtn.click();
   await delay(1000);
+}
+
+// ─── Notes Export (button injected into the Studio panel) ───
+//
+// Lists the notes already saved in the CURRENT notebook (read from this
+// page's own URL — never the side panel's separately-tracked "selected
+// notebook", which can silently point at a different notebook) and lets
+// the user pick which ones to bulk-download as Markdown. Deliberately
+// reimplements this in-page rather than relying on NotebookLM's own
+// Studio > Export button: that button isn't present on every account/
+// notebook, so a button we inject ourselves is the only thing guaranteed
+// to be there.
+
+const NOTES_EXPORT_BTN_ID = 'nlm-notes-export-btn';
+const NOTES_EXPORT_MODAL_ID = 'nlm-notes-export-modal';
+
+function getCurrentNotebookId(): string | null {
+  const match = window.location.href.match(/\/notebook\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Best-effort anchor inside the Studio panel to dock the button next to.
+ * The panel's real class names are unknown/unstable (this file has needed
+ * re-adaptation to NotebookLM UI changes before — see the file header), so
+ * this tries a couple of guesses, then falls back to matching a "Studio" /
+ * "工作室" heading by its own text. If none of that is found, the button
+ * still gets injected — just as a floating button — so the feature stays
+ * reachable rather than silently disappearing.
+ */
+function findStudioAnchor(): HTMLElement | null {
+  const selectorCandidates = ['.studio-panel-header', '[class*="studio" i] [class*="header" i]'];
+  for (const sel of selectorCandidates) {
+    const el = document.querySelector<HTMLElement>(sel);
+    if (el) return el;
+  }
+
+  const headingCandidates = document.querySelectorAll<HTMLElement>('h1, h2, h3, span, div');
+  for (const el of headingCandidates) {
+    if (el.children.length > 0) continue; // want a leaf node, not a big wrapper
+    const text = el.textContent?.trim();
+    if (text === 'Studio' || text === '工作室') return el;
+  }
+  return null;
+}
+
+function injectNotesExportButton(): void {
+  if (document.getElementById(NOTES_EXPORT_BTN_ID)) return;
+  // Only relevant inside an actual notebook, not the home/list page.
+  if (!getCurrentNotebookId()) return;
+
+  if (!document.getElementById('nlm-notes-export-style')) {
+    const style = document.createElement('style');
+    style.id = 'nlm-notes-export-style';
+    style.textContent = `
+      #${NOTES_EXPORT_BTN_ID} {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin: 4px 8px;
+        padding: 4px 10px;
+        border: 1px solid #dadce0;
+        border-radius: 16px;
+        background: white;
+        color: #1a73e8;
+        font-family: 'Google Sans', Roboto, sans-serif;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      #${NOTES_EXPORT_BTN_ID}:hover { background: #f1f3f4; }
+      #${NOTES_EXPORT_BTN_ID}.nlm-notes-export-floating {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 99999;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+        z-index: 999999; display: flex; align-items: center; justify-content: center;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-panel {
+        background: white; border-radius: 12px; width: 360px; max-width: 90vw;
+        max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+        font-family: 'Google Sans', Roboto, sans-serif; box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 16px; border-bottom: 1px solid #eee; font-size: 14px; font-weight: 500; color: #202124;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-close {
+        border: none; background: none; cursor: pointer; font-size: 16px; color: #5f6368; line-height: 1;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-body { padding: 12px 16px 16px; overflow-y: auto; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-filter {
+        width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid #dadce0;
+        border-radius: 8px; font-size: 13px; margin-bottom: 8px;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-toolbar {
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 12px; color: #5f6368; margin-bottom: 4px;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-link {
+        border: none; background: none; color: #1a73e8; cursor: pointer; font-size: 12px; padding: 0 4px;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-list {
+        max-height: 240px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; margin-bottom: 12px;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-row {
+        display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px;
+        border-bottom: 1px solid #f1f3f4; font-size: 13px; color: #3c4043; cursor: pointer;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-row:last-child { border-bottom: none; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-row:hover { background: #f8f9fa; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-download {
+        width: 100%; padding: 9px; border: none; border-radius: 8px; background: #1a73e8;
+        color: white; font-size: 13px; font-weight: 500; cursor: pointer;
+      }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-download:disabled { opacity: 0.5; cursor: not-allowed; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-status { margin-top: 8px; font-size: 12px; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-status-ok { color: #188038; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-status-error { color: #d93025; }
+      #${NOTES_EXPORT_MODAL_ID} .nlm-ne-empty, #${NOTES_EXPORT_MODAL_ID} .nlm-ne-loading, #${NOTES_EXPORT_MODAL_ID} .nlm-ne-error {
+        padding: 24px 8px; text-align: center; color: #5f6368; font-size: 13px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const btn = document.createElement('button');
+  btn.id = NOTES_EXPORT_BTN_ID;
+  btn.textContent = ct('notesExport.btn');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openNotesExportModal();
+  });
+
+  const anchor = findStudioAnchor();
+  if (anchor?.parentElement) {
+    anchor.insertAdjacentElement('afterend', btn);
+  } else {
+    console.warn('[notes-export] Studio panel anchor not found — falling back to a floating button');
+    btn.classList.add('nlm-notes-export-floating');
+    document.body.appendChild(btn);
+  }
+}
+
+function openNotesExportModal(): void {
+  if (document.getElementById(NOTES_EXPORT_MODAL_ID)) return;
+
+  const notebookId = getCurrentNotebookId();
+  if (!notebookId) return;
+
+  const modal = document.createElement('div');
+  modal.id = NOTES_EXPORT_MODAL_ID;
+  modal.innerHTML = `
+    <div class="nlm-ne-overlay">
+      <div class="nlm-ne-panel">
+        <div class="nlm-ne-header">
+          <span>${ct('notesExport.title')}</span>
+          <button class="nlm-ne-close">✕</button>
+        </div>
+        <div class="nlm-ne-body">
+          <div class="nlm-ne-loading">${ct('notesExport.loading')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelector('.nlm-ne-close')?.addEventListener('click', close);
+  modal.querySelector('.nlm-ne-overlay')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) close();
+  });
+
+  chrome.runtime.sendMessage({ type: 'LIST_NOTEBOOK_NOTES', notebookId }, (resp) => {
+    const body = modal.querySelector<HTMLElement>('.nlm-ne-body');
+    if (!body) return;
+    if (!resp?.success) {
+      console.error('[notes-export] LIST_NOTEBOOK_NOTES failed:', resp?.error);
+      body.innerHTML = `<div class="nlm-ne-error">${escapeHtml(ct('notesExport.listFailed'))}${resp?.error ? `: ${escapeHtml(resp.error)}` : ''}</div>`;
+      return;
+    }
+    const notes = (resp.data?.notes || []) as { id: string; title: string; content: string }[];
+    console.log(`[notes-export] Loaded ${notes.length} notes for notebook ${notebookId}`);
+    renderNotesList(body, notes, close);
+  });
+}
+
+function renderNotesList(
+  body: HTMLElement,
+  notes: { id: string; title: string; content: string }[],
+  close: () => void,
+): void {
+  if (notes.length === 0) {
+    body.innerHTML = `<div class="nlm-ne-empty">${ct('notesExport.empty')}</div>`;
+    return;
+  }
+
+  const selected = new Set(notes.map((n) => n.id));
+
+  body.innerHTML = `
+    <input type="text" class="nlm-ne-filter" placeholder="${escapeHtml(ct('notesExport.filterPlaceholder'))}" />
+    <div class="nlm-ne-toolbar">
+      <span class="nlm-ne-count"></span>
+      <span>
+        <button class="nlm-ne-link nlm-ne-select-all">${ct('notesExport.selectAll')}</button>
+        <button class="nlm-ne-link nlm-ne-select-none">${ct('notesExport.selectNone')}</button>
+      </span>
+    </div>
+    <div class="nlm-ne-list"></div>
+    <button class="nlm-ne-download"></button>
+    <div class="nlm-ne-status"></div>
+  `;
+
+  const listEl = body.querySelector<HTMLElement>('.nlm-ne-list')!;
+  const countEl = body.querySelector<HTMLElement>('.nlm-ne-count')!;
+  const filterEl = body.querySelector<HTMLInputElement>('.nlm-ne-filter')!;
+  const downloadBtn = body.querySelector<HTMLButtonElement>('.nlm-ne-download')!;
+  const statusEl = body.querySelector<HTMLElement>('.nlm-ne-status')!;
+
+  const updateFooter = () => {
+    countEl.textContent = ct('notesExport.selectedCount', { selected: selected.size, total: notes.length });
+    downloadBtn.textContent = ct('notesExport.download', { count: selected.size });
+    downloadBtn.disabled = selected.size === 0;
+  };
+
+  const renderRows = () => {
+    const q = filterEl.value.trim().toLowerCase();
+    const visible = q ? notes.filter((n) => n.title.toLowerCase().includes(q)) : notes;
+    listEl.innerHTML = visible.length
+      ? visible.map((n) => `
+        <label class="nlm-ne-row">
+          <input type="checkbox" data-id="${escapeHtml(n.id)}" ${selected.has(n.id) ? 'checked' : ''} />
+          <span>${escapeHtml(n.title)}</span>
+        </label>
+      `).join('')
+      : `<div class="nlm-ne-empty">${ct('notesExport.noResults')}</div>`;
+
+    listEl.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.dataset.id!;
+        if (cb.checked) selected.add(id); else selected.delete(id);
+        updateFooter();
+      });
+    });
+    updateFooter();
+  };
+
+  filterEl.addEventListener('input', renderRows);
+  body.querySelector('.nlm-ne-select-all')?.addEventListener('click', () => {
+    notes.forEach((n) => selected.add(n.id));
+    renderRows();
+  });
+  body.querySelector('.nlm-ne-select-none')?.addEventListener('click', () => {
+    selected.clear();
+    renderRows();
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const toDownload = notes.filter((n) => selected.has(n.id));
+    downloadBtn.disabled = true;
+    statusEl.textContent = '';
+    statusEl.className = 'nlm-ne-status';
+    chrome.runtime.sendMessage(
+      { type: 'DOWNLOAD_NOTES', notes: toDownload.map((n) => ({ title: n.title, content: n.content })) },
+      (resp) => {
+        downloadBtn.disabled = selected.size === 0;
+        if (resp?.success) {
+          statusEl.textContent = ct('notesExport.downloadDone');
+          statusEl.className = 'nlm-ne-status nlm-ne-status-ok';
+          setTimeout(close, 1200);
+        } else {
+          statusEl.textContent = resp?.error || ct('notesExport.downloadFailed');
+          statusEl.className = 'nlm-ne-status nlm-ne-status-error';
+        }
+      },
+    );
+  });
+
+  renderRows();
 }
 
 // ─── URL Import ─────────────────────────────────────────────
@@ -1075,6 +1368,19 @@ const _csStrings: Record<string, [string, string]> = {
   'failed':            ['失败', 'Failed'],
   'done':              ['✓ 完成', '✓ Done'],
   'close':             ['关闭', 'Close'],
+  'notesExport.btn':             ['📝 导出笔记', '📝 Export Notes'],
+  'notesExport.title':           ['导出笔记', 'Export Notes'],
+  'notesExport.loading':         ['加载中...', 'Loading...'],
+  'notesExport.listFailed':      ['获取笔记列表失败', 'Failed to load notes'],
+  'notesExport.empty':           ['当前笔记本还没有笔记', 'This notebook has no notes yet'],
+  'notesExport.filterPlaceholder': ['筛选笔记...', 'Filter notes...'],
+  'notesExport.selectAll':       ['全选', 'Select all'],
+  'notesExport.selectNone':      ['取消全选', 'Deselect all'],
+  'notesExport.selectedCount':   ['已选 {selected}/{total} 篇', '{selected}/{total} selected'],
+  'notesExport.noResults':       ['没有匹配的笔记', 'No matching notes'],
+  'notesExport.download':        ['下载选中 ({count})', 'Download Selected ({count})'],
+  'notesExport.downloadDone':    ['下载完成', 'Download complete'],
+  'notesExport.downloadFailed':  ['下载失败', 'Download failed'],
 };
 function ct(key: string, params?: Record<string, string | number>): string {
   const pair = _csStrings[key];
