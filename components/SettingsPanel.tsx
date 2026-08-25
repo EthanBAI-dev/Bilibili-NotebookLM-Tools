@@ -55,6 +55,26 @@ export function SettingsPanel({ onClose, onReplayTour }: Props) {
     await persistSettings({ stripBilibiliTimestamps: checked });
   };
 
+  const updateImportNamePrefix = (value: string) => {
+    if (!settings) return;
+    setSettings({ ...settings, importNamePrefix: value });
+  };
+
+  const commitImportNamePrefix = async () => {
+    if (!settings) return;
+    await persistSettings({ importNamePrefix: settings.importNamePrefix });
+  };
+
+  const updateDefaultNotePrompt = (value: string) => {
+    if (!settings) return;
+    setSettings({ ...settings, defaultNotePrompt: value });
+  };
+
+  const commitDefaultNotePrompt = async () => {
+    if (!settings) return;
+    await persistSettings({ defaultNotePrompt: settings.defaultNotePrompt });
+  };
+
   const renderSaveState = () => {
     if (saveState === 'saving') {
       return <span className="text-[11px] text-gray-400">{t('more.saving')}</span>;
@@ -126,6 +146,33 @@ export function SettingsPanel({ onClose, onReplayTour }: Props) {
                   />
                 </button>
               </div>
+            </div>
+            <div className="rounded-xl border border-border-strong bg-white p-4 shadow-soft">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-900">{t('settings.importPrefixTitle')}</div>
+                <p className="mt-1 text-xs leading-5 text-gray-500">{t('settings.importPrefixDesc')}</p>
+              </div>
+              <input
+                type="text"
+                value={settings.importNamePrefix}
+                onChange={(e) => updateImportNamePrefix(e.target.value)}
+                onBlur={commitImportNamePrefix}
+                placeholder={t('settings.importPrefixPlaceholder')}
+                className="mt-3 w-full rounded-lg border border-border-strong px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-notebooklm-blue focus:outline-none focus:ring-1 focus:ring-notebooklm-blue"
+              />
+            </div>
+            <div className="rounded-xl border border-border-strong bg-white p-4 shadow-soft">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-900">{t('settings.defaultNotePromptTitle')}</div>
+                <p className="mt-1 text-xs leading-5 text-gray-500">{t('settings.defaultNotePromptDesc')}</p>
+              </div>
+              <textarea
+                value={settings.defaultNotePrompt}
+                onChange={(e) => updateDefaultNotePrompt(e.target.value)}
+                onBlur={commitDefaultNotePrompt}
+                rows={4}
+                className="mt-3 w-full resize-none rounded-lg border border-border-strong px-3 py-2 text-sm text-gray-900 focus:border-notebooklm-blue focus:outline-none focus:ring-1 focus:ring-notebooklm-blue"
+              />
             </div>
             <div className="rounded-xl border border-border-strong bg-white p-4 shadow-soft space-y-4">
               <div className="flex items-start justify-between gap-3">

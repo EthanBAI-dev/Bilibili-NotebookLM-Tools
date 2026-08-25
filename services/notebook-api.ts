@@ -10,6 +10,10 @@ const NLM_HOME_URL = `${NOTEBOOKLM_HOSTS.current}/`;
 
 const RPC_LIST_NOTEBOOKS = 'wXbhsf';
 const RPC_ADD_SOURCE = 'izAoDd';
+const RPC_GET_NOTEBOOK = 'rLM1Ne';
+const RPC_UPDATE_SOURCE = 'b7Wfje';
+const RPC_CREATE_ARTIFACT = 'R7cb6c';
+const RPC_LIST_ARTIFACTS = 'gArtLc';
 
 // Delay between batchexecute calls to avoid rate limiting
 const RPC_DELAY_MS = 1200;
@@ -508,6 +512,134 @@ export async function addSourceUrl(notebookId: string, url: string): Promise<voi
   await rpcCall(RPC_ADD_SOURCE, params, `/notebook/${notebookId}`);
 }
 
+// ── Source list / rename (for the custom name-prefix feature) ──
+
+export interface NotebookSourceItem {
+  id: string;
+  title: string;
+}
+
+/**
+ * Fetch id+title for every source in a notebook, via GET_NOTEBOOK (rLM1Ne).
+ *
+ * Params and response layout confirmed against a live-captured request/
+ * response pair (teng-lin/notebooklm-py's recorded test fixtures, not just
+ * its docs): the response decodes to `[nbInfo]`, where `nbInfo[1]` is the
+ * source list and each source row is `[idEnvelope, title, metadata,
+ * statusBlock, ...]` — `idEnvelope` is usually `["id"]`, occasionally
+ * `[null, true, ["id"]]` for Drive-backed sources.
+ */
+export async function getNotebookSources(notebookId: string): Promise<NotebookSourceItem[]> {
+  const params = [
+    notebookId,
+    null,
+    [2, null, null, [1, null, null, null, null, null, null, null, null, null, [1]]],
+    null,
+    0,
+  ];
+  const raw = await rpcCall(RPC_GET_NOTEBOOK, params, `/notebook/${notebookId}`);
+  return parseNotebookSources(raw);
+}
+
+/** Extract a source id from its envelope: `"id"`, `["id"]`, or `[null, true, ["id"]]`. */
+function extractSourceId(idEnvelope: unknown): string {
+  if (typeof idEnvelope === 'string') return idEnvelope;
+  if (!Array.isArray(idEnvelope) || idEnvelope.length === 0) return '';
+  const [first] = idEnvelope;
+  if (typeof first === 'string') return first;
+  // Drive-backed nesting: [null, true, ["id"]]
+  const inner = idEnvelope[2];
+  if (Array.isArray(inner) && typeof inner[0] === 'string') return inner[0];
+  return '';
+}
+
+function parseNotebookSources(rawText: string): NotebookSourceItem[] {
+  try {
+    const lines = rawText.split('\n');
+    const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_GET_NOTEBOOK));
+    if (!dataLine) {
+      console.warn('[notebook-api] getNotebookSources: no wrb.fr line found');
+      return [];
+    }
+
+    const parsed = JSON.parse(dataLine) as unknown[];
+    const entry = parsed.find(
+      (item): item is [string, string, string] =>
+        Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_GET_NOTEBOOK,
+    );
+    if (!entry || typeof entry[2] !== 'string') {
+      console.warn('[notebook-api] getNotebookSources: no matching wrb.fr entry');
+      return [];
+    }
+
+    const data = JSON.parse(entry[2]);
+    const nbInfo = data?.[0];
+    const sourceRows = Array.isArray(nbInfo?.[1]) ? nbInfo[1] : [];
+
+    const sources: NotebookSourceItem[] = [];
+    for (const row of sourceRows) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      const id = extractSourceId(row[0]);
+      const title = typeof row[1] === 'string' ? row[1] : '';
+      if (id) sources.push({ id, title });
+    }
+
+    console.log(`[notebook-api] getNotebookSources: parsed ${sources.length} source rows`);
+    return sources;
+  } catch (e) {
+    console.error('[notebook-api] getNotebookSources parse error:', e);
+    return [];
+  }
+}
+
+/**
+ * Rename an existing source via UPDATE_SOURCE (b7Wfje).
+ * Params `[null, [sourceId], [[[newTitle]]]]` confirmed against a live
+ * request/response cassette (teng-lin/notebooklm-py tests/cassettes/
+ * sources_rename.yaml).
+ */
+export async function renameSourceRpc(notebookId: string, sourceId: string, newTitle: string): Promise<void> {
+  console.log(`[notebook-api] renameSourceRpc: source=${sourceId}, newTitle="${newTitle}"`);
+  const params = [null, [sourceId], [[[newTitle]]]];
+  await rpcCall(RPC_UPDATE_SOURCE, params, `/notebook/${notebookId}`);
+}
+
+/**
+ * Add a URL source and, if `prefix` is non-empty, rename it from the
+ * server-assigned title to `prefix + title`. addSourceUrl() never learns
+ * the new source's id from its own response, so this diffs the notebook's
+ * source list before/after to find it — two extra round trips, only paid
+ * when a prefix is actually configured.
+ */
+export async function addSourceUrlWithPrefix(notebookId: string, url: string, prefix: string): Promise<void> {
+  if (!prefix) {
+    await addSourceUrl(notebookId, url);
+    return;
+  }
+
+  const before = await getNotebookSources(notebookId);
+  const beforeIds = new Set(before.map((s) => s.id));
+
+  await addSourceUrl(notebookId, url);
+
+  // NotebookLM needs a moment to fetch the URL and assign a title before
+  // the new source shows up in the list.
+  await delay(1500);
+
+  const after = await getNotebookSources(notebookId);
+  const added = after.find((s) => !beforeIds.has(s.id));
+  if (!added) {
+    console.warn('[notebook-api] addSourceUrlWithPrefix: could not identify the new source — skipping rename');
+    return;
+  }
+
+  try {
+    await renameSourceRpc(notebookId, added.id, `${prefix}${added.title}`);
+  } catch (e) {
+    console.warn('[notebook-api] addSourceUrlWithPrefix: rename failed (non-fatal):', e);
+  }
+}
+
 // ── Add source (text) ──
 
 export async function addSourceText(
@@ -530,6 +662,149 @@ export async function addSourceText(
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ── Note generation (Studio "report" artifacts: Study Guide, Briefing Doc, …) ──
+
+/**
+ * `artifact_data[4]` processing status codes, confirmed against a live
+ * CREATE_ARTIFACT/LIST_ARTIFACTS request-response pair (teng-lin/
+ * notebooklm-py's recorded test fixtures).
+ */
+export const ARTIFACT_STATUS = {
+  PENDING: 1,
+  PROCESSING: 2,
+  COMPLETED: 3,
+  FAILED: 4,
+} as const;
+
+/** Backend type code for report-family artifacts (Study Guide, Briefing Doc, Blog Post, …). */
+const ARTIFACT_TYPE_REPORT = 2;
+
+export interface ArtifactItem {
+  id: string;
+  title: string;
+  typeCode: number;
+  status: number;
+  /** Markdown body, for a completed report-type artifact; null otherwise. */
+  markdown: string | null;
+}
+
+export interface ReportConfig {
+  title: string;
+  description: string;
+  prompt: string;
+  language?: string;
+}
+
+/**
+ * Kick off report generation via CREATE_ARTIFACT (R7cb6c). Generation is
+ * async — this returns the new artifact's id immediately; poll
+ * `listArtifacts()` for it to reach `ARTIFACT_STATUS.COMPLETED`.
+ *
+ * Params shape confirmed against a live-captured CREATE_ARTIFACT request for
+ * a Study Guide (teng-lin/notebooklm-py tests/cassettes/
+ * artifacts_generate_study_guide.yaml): `[[2], notebookId, [null, null, 2,
+ * sourceIdsTriple, null, null, null, [null, [title, description, null,
+ * sourceIdsDouble, language, prompt, null, true]]]]`.
+ */
+export async function generateReportArtifact(
+  notebookId: string,
+  sourceIds: string[],
+  config: ReportConfig,
+): Promise<string> {
+  const sourceIdsTriple = sourceIds.map((id) => [[id]]);
+  const sourceIdsDouble = sourceIds.map((id) => [id]);
+  const language = config.language || 'en';
+
+  const params = [
+    [2],
+    notebookId,
+    [
+      null,
+      null,
+      ARTIFACT_TYPE_REPORT,
+      sourceIdsTriple,
+      null,
+      null,
+      null,
+      [
+        null,
+        [config.title, config.description, null, sourceIdsDouble, language, config.prompt, null, true],
+      ],
+    ],
+  ];
+
+  const raw = await rpcCall(RPC_CREATE_ARTIFACT, params, `/notebook/${notebookId}`);
+  const lines = raw.split('\n');
+  for (const line of lines) {
+    if (!line.includes('wrb.fr') || !line.includes(RPC_CREATE_ARTIFACT)) continue;
+    try {
+      const parsed = JSON.parse(line) as unknown[];
+      const entry = parsed.find(
+        (item): item is [string, string, string] =>
+          Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_CREATE_ARTIFACT,
+      );
+      if (!entry || typeof entry[2] !== 'string') continue;
+      const data = JSON.parse(entry[2]);
+      const artifactId = data?.[0];
+      if (typeof artifactId === 'string' && artifactId) return artifactId;
+    } catch { /* try next line */ }
+  }
+  throw new Error('[notebook-api] generateReportArtifact: could not parse artifact id from response');
+}
+
+/**
+ * List every artifact in a notebook via LIST_ARTIFACTS (gArtLc), including
+ * report markdown for completed report-type rows.
+ *
+ * Row layout (`artifact_data[N]`) confirmed against a live-captured
+ * response containing a completed Study Guide (teng-lin/notebooklm-py
+ * tests/cassettes/artifacts_download_report.yaml): id=[0], title=[1],
+ * typeCode=[2], status=[4], report markdown=[7] (either a bare string or a
+ * one-element `[markdown]` wrapper).
+ */
+export async function listArtifacts(notebookId: string): Promise<ArtifactItem[]> {
+  const params = [[2], notebookId, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'];
+  const raw = await rpcCall(RPC_LIST_ARTIFACTS, params, `/notebook/${notebookId}`);
+
+  const lines = raw.split('\n');
+  const dataLine = lines.find((line) => line.includes('wrb.fr') && line.includes(RPC_LIST_ARTIFACTS));
+  if (!dataLine) return [];
+
+  try {
+    const parsed = JSON.parse(dataLine) as unknown[];
+    const entry = parsed.find(
+      (item): item is [string, string, string] =>
+        Array.isArray(item) && item[0] === 'wrb.fr' && item[1] === RPC_LIST_ARTIFACTS,
+    );
+    if (!entry || typeof entry[2] !== 'string') return [];
+
+    const data = JSON.parse(entry[2]);
+    // Response is `[[row1, row2, ...]]` — one wrapping level around the row list.
+    const rows: unknown[] = Array.isArray(data?.[0]) ? data[0] : [];
+
+    const items: ArtifactItem[] = [];
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      const id = row[0];
+      if (typeof id !== 'string' || !id) continue;
+      const title = typeof row[1] === 'string' ? row[1] : '';
+      const typeCode = typeof row[2] === 'number' ? row[2] : 0;
+      const status = typeof row[4] === 'number' ? row[4] : 0;
+
+      let markdown: string | null = null;
+      const reportSlot = row[7];
+      if (typeof reportSlot === 'string') markdown = reportSlot;
+      else if (Array.isArray(reportSlot) && typeof reportSlot[0] === 'string') markdown = reportSlot[0];
+
+      items.push({ id, title, typeCode, status, markdown });
+    }
+    return items;
+  } catch (e) {
+    console.error('[notebook-api] listArtifacts parse error:', e);
+    return [];
+  }
 }
 
 // ── Create notebook ──

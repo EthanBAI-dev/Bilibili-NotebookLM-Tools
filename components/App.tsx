@@ -16,6 +16,7 @@ import { HistoryPanel } from '@/components/HistoryPanel';
 import { RescueBanner } from '@/components/RescueBanner';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { NoteGeneration } from '@/components/NoteGeneration';
 import { InfoPopover } from '@/components/InfoPopover';
 import { RateUsBar } from '@/components/RateUsBar';
 
@@ -90,7 +91,12 @@ export default function App() {
       setPrefetchedYouTubeResult(null);
     }
 
-    if (/podcasts\.apple\.com\//.test(url) || /xiaoyuzhoufm\.com\/(episode|podcast)\//.test(url)) {
+    if (/notebook\.google\.com\/|notebooklm\.google\.com\//.test(url)) {
+      // The user has their Gemini Notebook open — note generation reads
+      // straight from that notebook, so surface it here instead of falling
+      // through to the generic "web import" tab.
+      setActiveTab('notes');
+    } else if (/podcasts\.apple\.com\//.test(url) || /xiaoyuzhoufm\.com\/(episode|podcast)\//.test(url)) {
       setActiveTab('podcast');
       setInitialPodcastUrl(url);
     } else if (/(?:youtube\.com|youtu\.be)\//.test(url)) {
@@ -236,6 +242,7 @@ export default function App() {
     podcast: t('app.hintPodcast'),
     web: t('app.hintWeb'),
     claude: t('app.hintAI'),
+    notes: t('app.hintNotes'),
   }[activeTab] ?? '';
 
   return (
@@ -374,6 +381,11 @@ export default function App() {
             <AIchatImport onProgress={setImportProgress} onImportHandlerChange={registerImportHandler} fetchTrigger={fetchTrigger} />
           </div>
         )}
+        {activeTab === 'notes' && (
+          <div className="animate-fade-in">
+            <NoteGeneration />
+          </div>
+        )}
       </div>
 
       {/* ════════════════════════════════════════════════════════
@@ -393,8 +405,9 @@ export default function App() {
             download-only (see PodcastImport.tsx) and never registers an
             import handler, so the button could only ever sit there greyed
             out. The info icon next to "当前网站" above explains the
-            download-then-drag flow for that tab. */}
-        {activeTab !== 'podcast' && (
+            download-then-drag flow for that tab. Also hidden on the notes
+            tab — generating a note isn't an import, it has its own button. */}
+        {activeTab !== 'podcast' && activeTab !== 'notes' && (
           <button
             data-tour="import-button"
             onClick={handleSharedImport}
